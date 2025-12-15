@@ -1,0 +1,6 @@
+@Api_Tlapaleria_HostAddress = http://localhost:5263
+
+GET {{Api_Tlapaleria_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
