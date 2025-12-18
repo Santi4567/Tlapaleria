@@ -196,6 +196,50 @@ namespace Api_Tlapaleria.Services
 
             return true;
         }
+
+        //Traer tpdos los usuarios 
+        public async Task<List<UserDto>> GetAllUsersAsync()
+        {
+            // Usamos AsNoTracking porque solo vamos a leer, es más rápido
+            var usuarios = await _context.Users
+                .AsNoTracking()
+                .Include(u => u.Rol) // Importante para sacar el nombre del rol
+                .Select(u => new UserDto
+                {
+                    Id = u.Id,
+                    Name = u.Name,
+                    Username = u.Username,
+                    Rol = u.Rol.Nombre, // Accedemos a la navegación
+                    IsActive = u.IsActive
+                })
+                .ToListAsync();
+
+            return usuarios;
+        }
+
+        //Buscar Usuarios 
+        public async Task<List<UserDto>> SearchUsersAsync(string termino)
+        {
+            if (string.IsNullOrWhiteSpace(termino))
+                return new List<UserDto>();
+
+            // Buscamos si el término está en el Nombre O (||) en el Username
+            var usuarios = await _context.Users
+                .AsNoTracking()
+                .Include(u => u.Rol)
+                .Where(u => u.Name.Contains(termino) || u.Username.Contains(termino))
+                .Select(u => new UserDto
+                {
+                    Id = u.Id,
+                    Name = u.Name,
+                    Username = u.Username,
+                    Rol = u.Rol.Nombre,
+                    IsActive = u.IsActive
+                })
+                .ToListAsync();
+
+            return usuarios;
+        }
     }
 
 }

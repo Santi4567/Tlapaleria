@@ -129,5 +129,44 @@ namespace Api_Tlapaleria.Controllers
                 return BadRequest(ApiResponse<object>.Error(ex.Message));
             }
         }
+
+        // 1. OBTENER TODOS LOS USUARIOS
+        [HttpGet] // GET: api/users
+        [RequierePermiso("view.users")]
+        public async Task<ActionResult<ApiResponse<List<UserDto>>>> GetAll()
+        {
+            try
+            {
+                var lista = await _userService.GetAllUsersAsync();
+                return Ok(ApiResponse<List<UserDto>>.Exito(lista));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
+
+        // 2. BUSCAR USUARIOS
+        [HttpGet("search/{termino}")] // GET: api/users/search/juan
+        [RequierePermiso("view.users")]
+        public async Task<ActionResult<ApiResponse<List<UserDto>>>> Search(string termino)
+        {
+            try
+            {
+                var resultados = await _userService.SearchUsersAsync(termino);
+
+                if (resultados.Count == 0)
+                {
+                    // Opcional: Puedes devolver Exito con lista vacía, o un mensaje
+                    return Ok(ApiResponse<List<UserDto>>.Exito(resultados, "No se encontraron coincidencias."));
+                }
+
+                return Ok(ApiResponse<List<UserDto>>.Exito(resultados));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
     }
 };

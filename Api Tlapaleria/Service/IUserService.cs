@@ -19,5 +19,11 @@ namespace Api_Tlapaleria.Services
 
         // Método para que un jefe resetee la pass de un empleado
         Task<bool> ResetPasswordByAdminAsync(int targetUserId, string newPassword);
+
+        // 1. Traer todos
+        Task<List<UserDto>> GetAllUsersAsync();
+
+        // 2. Buscar por coincidencia (Nombre O Username)
+        Task<List<UserDto>> SearchUsersAsync(string termino);
     }
 }
