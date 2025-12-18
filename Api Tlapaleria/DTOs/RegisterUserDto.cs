@@ -8,7 +8,8 @@ namespace Api_Tlapaleria.DTOs
         public string Username { get; set; }
 
         [Required]
-        [MinLength(6, ErrorMessage = "La contraseña debe tener al menos 6 caracteres")]
+        [MinLength(8, ErrorMessage = "La contraseña debe tener al menos 8 caracteres")]
+        [RegularExpression(@"^(?=.*\d)(?=.*[\W_]).+$", ErrorMessage = "La contraseña debe contener al menos un número y un símbolo (ej. 13@#$&)")]
         public string Password { get; set; }
 
         [Required]
