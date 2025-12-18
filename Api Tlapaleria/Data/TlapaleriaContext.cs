@@ -5,19 +5,29 @@ namespace Api_Tlapaleria.Data
 {
     public class TlapaleriaContext : DbContext
     {
-        // Constructor: Recibe las opciones (como la cadena de conexión) y las pasa a la clase base
         public TlapaleriaContext(DbContextOptions<TlapaleriaContext> options) : base(options)
         {
         }
 
-        // Aquí registras tus tablas. 
-        // El nombre de la propiedad "Users" será el nombre de la tabla en MySQL.
+        // TUS TABLAS
         public DbSet<User> Users { get; set; }
+        public DbSet<Rol> Roles { get; set; }       // <--- AGREGAR
+        public DbSet<Permiso> Permisos { get; set; } // <--- AGREGAR
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            // Configuración global para usar la collation en español que hablamos antes
+            // Configuración de idioma español
             modelBuilder.UseCollation("utf8mb4_spanish_ci");
+
+            // Configurar que el nombre del permiso sea único (No queremos dos permisos llamados "add.users")
+            modelBuilder.Entity<Permiso>()
+                .HasIndex(p => p.NombreSistema)
+                .IsUnique();
+
+            // Configurar que el nombre del rol sea único
+            modelBuilder.Entity<Rol>()
+                .HasIndex(r => r.Nombre)
+                .IsUnique();
         }
     }
 }

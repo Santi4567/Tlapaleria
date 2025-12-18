@@ -1,10 +1,10 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
-using System.Text.Json.Serialization; // Necesario para JsonIgnore
+using System.Text.Json.Serialization;
 
 namespace Api_Tlapaleria.Models
 {
-    [Table("users")] // Asegura que EF busque la tabla "users" y no "user"
+    [Table("users")]
     public class User
     {
         [Key]
@@ -17,15 +17,19 @@ namespace Api_Tlapaleria.Models
 
         [Required]
         [MaxLength(255)]
-        [JsonIgnore] // ¡Importante! Evita que la contraseña (hash) salga en las respuestas JSON
+        [JsonIgnore]
         public string Passwd { get; set; } = string.Empty;
 
         [Required]
         [MaxLength(100)]
         public string Name { get; set; } = string.Empty;
 
-        [Required]
-        [MaxLength(20)]
-        public string Rol { get; set; } = string.Empty; // Aquí guardarás "Admin" o "Vendedor"
+        // Ponemos la relación con la tabla Roles:
+        public int RolId { get; set; } // La columna en BD (int)
+
+        [ForeignKey("RolId")]
+        public Rol Rol { get; set; } // El objeto (para sacar el nombre)
+
+        public bool IsActive { get; set; } = true;
     }
 }
