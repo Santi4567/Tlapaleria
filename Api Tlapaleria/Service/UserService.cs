@@ -240,6 +240,61 @@ namespace Api_Tlapaleria.Services
 
             return usuarios;
         }
+
+        //Eliminar usuarios 
+        public async Task<bool> DeleteUserAsync(int targetUserId, int requestorId)
+        {
+            // 1. BUSCAR A LA VÍCTIMA (Target)
+            var targetUser = await _context.Users
+                .Include(u => u.Rol) // Necesitamos saber su rol
+                .FirstOrDefaultAsync(u => u.Id == targetUserId);
+
+            if (targetUser == null) throw new Exception("El usuario a eliminar no existe.");
+
+            // 2. BUSCAR AL EJECUTOR (Requestor)
+            var requestorUser = await _context.Users
+                .Include(u => u.Rol)
+                .FirstOrDefaultAsync(u => u.Id == requestorId);
+
+            if (requestorUser == null) throw new Exception("Usuario ejecutor no válido.");
+
+            // --- REGLA 1: PROTECCIÓN DE RANGO ---
+            // "Alguien con permiso delete.users NO puede eliminar admins, solo entre ellos"
+            // Si la víctima es Admin... Y el que intenta borrarlo NO es Admin... ¡ERROR!
+            if (targetUser.Rol.Nombre == "Admin" && requestorUser.Rol.Nombre != "Admin")
+            {
+                throw new Exception("No tienes rango suficiente para eliminar a un Administrador.");
+            }
+
+            // --- REGLA 2: EL ÚLTIMO HOMBRE EN PIE ---
+            // "Siempre debe haber un admin"
+            if (targetUser.Rol.Nombre == "Admin")
+            {
+                // Contamos cuántos admins hay en total
+                int totalAdmins = await _context.Users
+                    .CountAsync(u => u.Rol.Nombre == "Admin");
+
+                if (totalAdmins <= 1)
+                {
+                    throw new Exception("No puedes eliminar al último Administrador del sistema. Debe quedar al menos uno.");
+                }
+            }
+
+            // --- EJECUCIÓN ---
+            try
+            {
+                _context.Users.Remove(targetUser);
+                await _context.SaveChangesAsync();
+                return true;
+            }
+            catch (DbUpdateException)
+            {
+                // ESTO ES IMPORTANTE:
+                // Si el usuario ya hizo ventas o cortes, SQL no te dejará borrarlo (Integridad Referencial).
+                // En ese caso, sugerimos desactivarlo.
+                throw new Exception("No se puede eliminar este usuario porque tiene registros asociados (Ventas, Pedidos). Te sugerimos desactivarlo (IsActive = false) en lugar de borrarlo.");
+            }
+        }
     }
 
 }

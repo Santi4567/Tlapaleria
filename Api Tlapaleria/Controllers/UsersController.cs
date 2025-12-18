@@ -168,5 +168,36 @@ namespace Api_Tlapaleria.Controllers
                 return BadRequest(ApiResponse<object>.Error(ex.Message));
             }
         }
+
+        //Eliminar 
+        [HttpDelete("delete/{id}")]
+        [RequierePermiso("delete.users")] // Validamos que tenga el permiso base primero
+        public async Task<ActionResult<ApiResponse<object>>> DeleteUser(int id)
+        {
+            try
+            {
+                // 1. OBTENER ID DEL EJECUTOR (Desde el Token)
+                var idClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+                if (idClaim == null) return Unauthorized(ApiResponse<object>.Error("Token inválido"));
+
+                int requestorId = int.Parse(idClaim.Value);
+
+                // 2. EVITAR SUICIDIO (Opcional pero recomendado)
+                if (id == requestorId)
+                {
+                    return BadRequest(ApiResponse<object>.Error("No puedes eliminar tu propia cuenta."));
+                }
+
+                // 3. LLAMAR AL SERVICIO
+                await _userService.DeleteUserAsync(id, requestorId);
+
+                return Ok(ApiResponse<object>.Exito(null, "Usuario eliminado correctamente del sistema."));
+            }
+            catch (Exception ex)
+            {
+                // Aquí caerán los errores de "No eres admin" o "Es el último admin"
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
     }
 };

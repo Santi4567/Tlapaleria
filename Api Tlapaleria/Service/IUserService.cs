@@ -17,7 +17,7 @@ namespace Api_Tlapaleria.Services
         // Cmabiar contrasena 
         Task<bool> ChangePasswordAsync(int userId, ChangePasswordDto datos);
 
-        // Método para que un jefe resetee la pass de un empleado
+        // Método para que un admin resetee la passwd de un usuario
         Task<bool> ResetPasswordByAdminAsync(int targetUserId, string newPassword);
 
         // 1. Traer todos
@@ -25,5 +25,8 @@ namespace Api_Tlapaleria.Services
 
         // 2. Buscar por coincidencia (Nombre O Username)
         Task<List<UserDto>> SearchUsersAsync(string termino);
+
+        //Eliminar 
+        Task<bool> DeleteUserAsync(int targetUserId, int requestorId);
     }
 }
