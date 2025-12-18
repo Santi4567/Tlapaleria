@@ -1,7 +1,7 @@
 ﻿using Api_Tlapaleria.Data;
 using Microsoft.EntityFrameworkCore;
 
-namespace Api_Tlapaleria.Service
+namespace Api_Tlapaleria.Services
 {
     public class PermissionService
     {

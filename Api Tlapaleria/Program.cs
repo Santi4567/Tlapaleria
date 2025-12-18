@@ -18,6 +18,10 @@ builder.Services.AddDbContext<TlapaleriaContext>(options =>
 // Aquí registramos tu servicio de Login para poder usarlo en el Controller
 builder.Services.AddScoped<AuthService>();
 
+builder.Services.AddScoped<Api_Tlapaleria.Services.IUserService, Api_Tlapaleria.Services.UserService>();
+
+// Y asegúrate de haber registrado el PermissionService también:
+builder.Services.AddScoped<Api_Tlapaleria.Services.PermissionService>();
 
 // 3. CONFIGURACIÓN DE JWT Y COOKIES (NUEVO - ¡IMPORTANTE!)
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
