@@ -35,5 +35,30 @@ namespace Api_Tlapaleria.Controllers
                 return BadRequest(ApiResponse<object>.Error(ex.Message));
             }
         }
+        [HttpGet("profile")]
+        // No lleva [RequierePermiso] porque todos los usuarios logueados deberían poder ver su propio perfil
+        public async Task<ActionResult<ApiResponse<UserProfileDto>>> GetMyProfile()
+        {
+            try
+            {
+                // 1. LEER EL ID DEL TOKEN (Seguridad pura)
+                // El ClaimTypes.NameIdentifier lo guardamos como ID numérico en el AuthService
+                var idClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+
+                if (idClaim == null)
+                    return Unauthorized(ApiResponse<object>.Error("Token inválido"));
+
+                int userId = int.Parse(idClaim.Value);
+
+                // 2. LLAMAR AL SERVICIO
+                var perfil = await _userService.GetUserProfileAsync(userId);
+
+                return Ok(ApiResponse<UserProfileDto>.Exito(perfil));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
     }
 }

@@ -42,7 +42,7 @@ namespace Api_Tlapaleria.Services
                 Passwd = passwordHash,
                 Name = datos.Name,
                 RolId = rolEncontrado.Id, // Asignamos el ID que encontramos en la BD
-                IsActive = true
+                IsActive = false 
             };
 
             // 5. Guardar
@@ -54,6 +54,44 @@ namespace Api_Tlapaleria.Services
             await _context.Entry(nuevoUsuario).Reference(u => u.Rol).LoadAsync();
 
             return nuevoUsuario;
+        }
+
+        public async Task<UserProfileDto> GetUserProfileAsync(int userId)
+        {
+            // 1. Buscamos al usuario y TRAEMOS TODA LA FAMILIA (Rol y Permisos)
+            var user = await _context.Users
+                .AsNoTracking()
+                .Include(u => u.Rol)                // Trae el Rol
+                    .ThenInclude(r => r.Permisos)   // Trae los Permisos de ese Rol
+                .FirstOrDefaultAsync(u => u.Id == userId);
+
+            if (user == null) throw new Exception("Usuario no encontrado");
+
+            // 2. LOGICA DE AGRUPAMIENTO (El truco)
+            // Suponemos que tus permisos son "verbo.entidad" (ej: "add.users")
+            // Usamos la "entidad" (users) como nombre del grupo.
+
+            var permisosAgrupados = user.Rol.Permisos
+                .GroupBy(p => {
+                    // Truco: Dividimos "add.users" por el punto y tomamos la última parte ("users")
+                    // Si el permiso no tiene puntos, se usa el nombre completo.
+                    var partes = p.NombreSistema.Split('.');
+                    return partes.Length > 1 ? partes.Last() : "General";
+                })
+                .ToDictionary(
+                    grupo => grupo.Key.ToUpper(), // La Clave: "USERS", "PRODUCTS"
+                    grupo => grupo.Select(p => p.NombreSistema).ToList() // La Lista: ["add.users", "edit.users"]
+                );
+
+            // 3. Mapeamos al DTO
+            return new UserProfileDto
+            {
+                Id = user.Id,
+                Username = user.Username,
+                Name = user.Name,
+                Rol = user.Rol.Nombre,
+                Permisos = permisosAgrupados
+            };
         }
     }
 }

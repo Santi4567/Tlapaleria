@@ -16,18 +16,33 @@ namespace Api_Tlapaleria.Data
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
-            // Configuración de idioma español
+            base.OnModelCreating(modelBuilder); // Buena práctica mantenerlo
             modelBuilder.UseCollation("utf8mb4_spanish_ci");
 
-            // Configurar que el nombre del permiso sea único (No queremos dos permisos llamados "add.users")
-            modelBuilder.Entity<Permiso>()
-                .HasIndex(p => p.NombreSistema)
-                .IsUnique();
+            // Índices (Igual que antes)
+            modelBuilder.Entity<Permiso>().HasIndex(p => p.NombreSistema).IsUnique();
+            modelBuilder.Entity<Rol>().HasIndex(r => r.Nombre).IsUnique();
 
-            // Configurar que el nombre del rol sea único
+            // --- AQUÍ ESTÁ EL ARREGLO ---
             modelBuilder.Entity<Rol>()
-                .HasIndex(r => r.Nombre)
-                .IsUnique();
+                .HasMany(r => r.Permisos)
+                .WithMany(p => p.Roles)
+                .UsingEntity<Dictionary<string, object>>(
+                    "RolPermiso", // 1. Nombre exacto de la tabla intermedia en MySQL
+
+                    // 2. Configuración del lado de "Permisos" (Right Key)
+                    j => j.HasOne<Permiso>()
+                          .WithMany()
+                          .HasForeignKey("PermisoId"), // <--- AQUÍ LE DECIMOS: "Usa PermisoId (singular)"
+
+                    // 3. Configuración del lado de "Roles" (Left Key)
+                    j => j.HasOne<Rol>()
+                          .WithMany()
+                          .HasForeignKey("RolId"),     // <--- AQUÍ LE DECIMOS: "Usa RolId"
+
+                    // 4. Configuración final de la tabla
+                    j => j.ToTable("RolPermiso")
+                );
         }
     }
 }
