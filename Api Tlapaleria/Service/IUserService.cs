@@ -6,13 +6,13 @@ namespace Api_Tlapaleria.Services
     public interface IUserService
     {
         //Para Insertar Usuarios
-        Task<User> RegisterAsync(RegisterUserDto datos);
+        Task<User> RegisterAsync(RegisterUserDto datos, int requestorId);
 
         // Para Trae la informacion del perfil
         Task<UserProfileDto> GetUserProfileAsync(int userId);
 
         //Actualizacion de informacion de la cuenta
-        Task<User> UpdateUserAsync(int id, UpdateUserDto datos);
+        Task<User> UpdateUserAsync(int id, UpdateUserDto datos, int requestorId);
 
         // Cmabiar contrasena 
         Task<bool> ChangePasswordAsync(int userId, ChangePasswordDto datos);
@@ -21,10 +21,10 @@ namespace Api_Tlapaleria.Services
         Task<bool> ResetPasswordByAdminAsync(int targetUserId, string newPassword);
 
         // 1. Traer todos
-        Task<List<UserDto>> GetAllUsersAsync();
+        Task<List<UserDto>> GetAllUsersAsync(int requestorId);
 
         // 2. Buscar por coincidencia (Nombre O Username)
-        Task<List<UserDto>> SearchUsersAsync(string termino);
+        Task<List<UserDto>> SearchUsersAsync(string termino, int requestorId);
 
         //Eliminar 
         Task<bool> DeleteUserAsync(int targetUserId, int requestorId);

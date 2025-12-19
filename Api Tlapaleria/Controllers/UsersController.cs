@@ -21,18 +21,25 @@ namespace Api_Tlapaleria.Controllers
 
         //Crear Nuevo Usuario 
         [HttpPost("create")]
-        [RequierePermiso("add.users")] // 2. Solo pueden crear usuarios los que que tengan este permiso 
+        [RequierePermiso("add.users")] // Un Gerente puede entrar aquí...
         public async Task<ActionResult<ApiResponse<User>>> CreateUser([FromBody] RegisterUserDto datos)
         {
             try
             {
-                var usuarioCreado = await _userService.RegisterAsync(datos);
+                // 1. OBTENER QUIÉN ESTÁ HACIENDO LA PETICIÓN
+                var idClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+                if (idClaim == null) return Unauthorized(ApiResponse<object>.Error("Token inválido"));
+
+                int requestorId = int.Parse(idClaim.Value);
+
+                // 2. LLAMAR AL SERVICIO CON EL ID DEL CREADOR
+                // Si un Gerente intenta crear un Admin, el servicio lanzará la excepción aquí.
+                var usuarioCreado = await _userService.RegisterAsync(datos, requestorId);
 
                 return Ok(ApiResponse<User>.Exito(usuarioCreado, "Usuario registrado correctamente"));
             }
             catch (Exception ex)
             {
-                // Si el rol no existe o el usuario ya existe, cae aquí
                 return BadRequest(ApiResponse<object>.Error(ex.Message));
             }
         }
@@ -66,20 +73,27 @@ namespace Api_Tlapaleria.Controllers
 
         //Actualizar Usuarios 
         [HttpPut("update/{id}")]
-        [RequierePermiso("edit.users")] // Solo quien tenga permiso de editar usuarios puede entrar aquí
+        [RequierePermiso("edit.users")]
         public async Task<ActionResult<ApiResponse<User>>> UpdateUser(int id, [FromBody] UpdateUserDto datos)
         {
             try
             {
-                // Validamos que el ID de la URL coincida con la lógica (aunque aquí es redundante, es buena práctica)
                 if (id <= 0) return BadRequest(ApiResponse<object>.Error("ID de usuario inválido"));
 
-                var usuarioActualizado = await _userService.UpdateUserAsync(id, datos);
+                // 1. OBTENER QUIÉN ESTÁ HACIENDO LA PETICIÓN
+                var idClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+                if (idClaim == null) return Unauthorized(ApiResponse<object>.Error("Token inválido"));
+
+                int requestorId = int.Parse(idClaim.Value);
+
+                // 2. LLAMAR AL SERVICIO CON EL ID DEL EJECUTOR
+                var usuarioActualizado = await _userService.UpdateUserAsync(id, datos, requestorId);
 
                 return Ok(ApiResponse<User>.Exito(usuarioActualizado, "Usuario actualizado correctamente"));
             }
             catch (Exception ex)
             {
+                // Aquí caerán los errores de permisos insuficientes
                 return BadRequest(ApiResponse<object>.Error(ex.Message));
             }
         }
@@ -131,13 +145,22 @@ namespace Api_Tlapaleria.Controllers
         }
 
         // 1. OBTENER TODOS LOS USUARIOS
-        [HttpGet] // GET: api/users
+        // ... imports ...
+
+        [HttpGet]
         [RequierePermiso("view.users")]
         public async Task<ActionResult<ApiResponse<List<UserDto>>>> GetAll()
         {
             try
             {
-                var lista = await _userService.GetAllUsersAsync();
+                // 1. Obtener ID del solicitante
+                var idClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+                if (idClaim == null) return Unauthorized(ApiResponse<object>.Error("Token inválido"));
+                int requestorId = int.Parse(idClaim.Value);
+
+                // 2. Llamar al servicio con el ID
+                var lista = await _userService.GetAllUsersAsync(requestorId);
+
                 return Ok(ApiResponse<List<UserDto>>.Exito(lista));
             }
             catch (Exception ex)
@@ -146,20 +169,20 @@ namespace Api_Tlapaleria.Controllers
             }
         }
 
-        // 2. BUSCAR USUARIOS
-        [HttpGet("search/{termino}")] // GET: api/users/search/juan
+        //Buscar Usuarios
+        [HttpGet("search/{termino}")]
         [RequierePermiso("view.users")]
         public async Task<ActionResult<ApiResponse<List<UserDto>>>> Search(string termino)
         {
             try
             {
-                var resultados = await _userService.SearchUsersAsync(termino);
+                // 1. Obtener ID del solicitante
+                var idClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
+                if (idClaim == null) return Unauthorized(ApiResponse<object>.Error("Token inválido"));
+                int requestorId = int.Parse(idClaim.Value);
 
-                if (resultados.Count == 0)
-                {
-                    // Opcional: Puedes devolver Exito con lista vacía, o un mensaje
-                    return Ok(ApiResponse<List<UserDto>>.Exito(resultados, "No se encontraron coincidencias."));
-                }
+                // 2. Llamar al servicio con el ID
+                var resultados = await _userService.SearchUsersAsync(termino, requestorId);
 
                 return Ok(ApiResponse<List<UserDto>>.Exito(resultados));
             }
