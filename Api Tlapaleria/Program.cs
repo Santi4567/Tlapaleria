@@ -18,7 +18,12 @@ builder.Services.AddDbContext<TlapaleriaContext>(options =>
 // Aquí registramos tu servicio de Login para poder usarlo en el Controller
 builder.Services.AddScoped<AuthService>();
 
+//Servicio de Usuarios
+
 builder.Services.AddScoped<Api_Tlapaleria.Services.IUserService, Api_Tlapaleria.Services.UserService>();
+
+//Servicio de suppliers
+builder.Services.AddScoped<Api_Tlapaleria.Services.ISupplierService, Api_Tlapaleria.Services.SupplierService>();
 
 // Y asegúrate de haber registrado el PermissionService también:
 builder.Services.AddScoped<Api_Tlapaleria.Services.PermissionService>();

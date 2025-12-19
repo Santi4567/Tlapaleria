@@ -10,9 +10,11 @@ namespace Api_Tlapaleria.Data
         }
 
         // TUS TABLAS
-        public DbSet<User> Users { get; set; }
-        public DbSet<Rol> Roles { get; set; }       // <--- AGREGAR
-        public DbSet<Permiso> Permisos { get; set; } // <--- AGREGAR
+        public DbSet<User> Users { get; set; }//user tabla
+        public DbSet<Rol> Roles { get; set; }       // <--- rol tabla
+        public DbSet<Permiso> Permisos { get; set; } // <--- Permisos tabla
+
+        public DbSet<Supplier> Suppliers { get; set; } // suppliers tabla
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
