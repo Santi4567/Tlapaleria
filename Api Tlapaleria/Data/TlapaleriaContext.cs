@@ -9,12 +9,15 @@ namespace Api_Tlapaleria.Data
         {
         }
 
-        // TUS TABLAS
+        // TUS TABLAS(Carpeta de Models)
         public DbSet<User> Users { get; set; }//user tabla
         public DbSet<Rol> Roles { get; set; }       // <--- rol tabla
         public DbSet<Permiso> Permisos { get; set; } // <--- Permisos tabla
 
         public DbSet<Supplier> Suppliers { get; set; } // suppliers tabla
+
+        public DbSet<Product> Products { get; set; }  // <--- Esto le faltaba
+        public DbSet<ProductPresentation> ProductPresentations { get; set; } // <--- Y esto
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -25,7 +28,7 @@ namespace Api_Tlapaleria.Data
             modelBuilder.Entity<Permiso>().HasIndex(p => p.NombreSistema).IsUnique();
             modelBuilder.Entity<Rol>().HasIndex(r => r.Nombre).IsUnique();
 
-            // --- AQUÍ ESTÁ EL ARREGLO ---
+            // --- AQUÍ ESTÁ EL ARREGLO para traer correctamente los roles ---
             modelBuilder.Entity<Rol>()
                 .HasMany(r => r.Permisos)
                 .WithMany(p => p.Roles)
@@ -45,6 +48,7 @@ namespace Api_Tlapaleria.Data
                     // 4. Configuración final de la tabla
                     j => j.ToTable("RolPermiso")
                 );
+
         }
     }
 }

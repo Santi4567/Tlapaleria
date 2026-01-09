@@ -25,6 +25,9 @@ builder.Services.AddScoped<Api_Tlapaleria.Services.IUserService, Api_Tlapaleria.
 //Servicio de suppliers
 builder.Services.AddScoped<Api_Tlapaleria.Services.ISupplierService, Api_Tlapaleria.Services.SupplierService>();
 
+//Servicio de Productos
+builder.Services.AddScoped<Api_Tlapaleria.Services.IProductService, Api_Tlapaleria.Services.ProductService>();
+
 // Y asegúrate de haber registrado el PermissionService también:
 builder.Services.AddScoped<Api_Tlapaleria.Services.PermissionService>();
 
