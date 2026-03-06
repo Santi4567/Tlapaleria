@@ -8,8 +8,8 @@ namespace Api_Tlapaleria.DTOs
         [Required(ErrorMessage = "El nombre de la presentación es obligatorio")]
         public string Name { get; set; } // "Bolsa 1kg"
 
-        public string Code { get; set; } // Opcional
-        public string Barcode { get; set; } // Opcional
+        public string? Code { get; set; } // Opcional
+        public string? Barcode { get; set; } // Opcional
 
         [Required]
         [Range(0.01, double.MaxValue, ErrorMessage = "El precio debe ser mayor a 0")]
@@ -25,13 +25,13 @@ namespace Api_Tlapaleria.DTOs
         // --- Identificación ---
         [Required]
         public string InternalCode { get; set; } // "CLA-2-STD"
-        public string Barcode { get; set; } // Código del empaque master
+        public string? Barcode { get; set; } // Código del empaque master
 
         [Required]
         public string Name { get; set; } // "Clavo 2 Pulgadas"
-        public string Description { get; set; }
-        public string Brand { get; set; }
-        public string Location { get; set; } // "Pasillo 4"
+        public string? Description { get; set; }
+        public string? Brand { get; set; }
+        public string? Location { get; set; } // "Pasillo 4"
 
         // --- Proveedor y Costos ---
         [Required]

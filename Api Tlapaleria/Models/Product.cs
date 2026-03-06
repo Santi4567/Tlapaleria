@@ -14,21 +14,21 @@ namespace Api_Tlapaleria.Models
         public string InternalCode { get; set; }
 
         [MaxLength(100)]
-        public string Barcode { get; set; }
+        public string? Barcode { get; set; }
 
         [Required]
         [MaxLength(200)]
         public string Name { get; set; }
 
-        public string Description { get; set; }
-        public string Brand { get; set; }
+        public string? Description { get; set; }
+        public string? Brand { get; set; }
 
         [MaxLength(100)]
-        public string Location { get; set; }
+        public string? Location { get; set; }
 
         public int SupplierId { get; set; }
         [ForeignKey("SupplierId")]
-        public Supplier Supplier { get; set; }
+        public Supplier? Supplier { get; set; }
 
         [Column(TypeName = "decimal(10,2)")]
         public decimal SupplierPrice { get; set; } // Costo
