@@ -9,26 +9,26 @@ namespace Api_Tlapaleria.Data
         {
         }
 
-        // TUS TABLAS(Carpeta de Models)
-        public DbSet<User> Users { get; set; }//user tabla
-        public DbSet<Rol> Roles { get; set; }       // <--- rol tabla
-        public DbSet<Permiso> Permisos { get; set; } // <--- Permisos tabla
+        //TABLAS/Modelos (Carpeta de /Models)
+        public DbSet<User> Users { get; set; }//<--- Modelo de la tabla de Usuarios 
+        public DbSet<Rol> Roles { get; set; }       // <--- Modelo de la tabla de roles 
+        public DbSet<Permiso> Permisos { get; set; } // <--- Modelo de la tabla de permisos 
 
-        public DbSet<Supplier> Suppliers { get; set; } // suppliers tabla
+        public DbSet<Supplier> Suppliers { get; set; } //<--- Modelo de la tabla de proveedores 
 
-        public DbSet<Product> Products { get; set; }  // <--- Esto le faltaba
-        public DbSet<ProductPresentation> ProductPresentations { get; set; } // <--- Y esto
+        public DbSet<Product> Products { get; set; }  //<--- Modelo de la tabla de productos 
+        public DbSet<ProductPresentation> ProductPresentations { get; set; } //<--- Modelo la tabla de presentacion del producto
 
-        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        protected override void OnModelCreating(ModelBuilder modelBuilder) // <--- Configuracion necesaria para mostrar bien los permisos de los usuarios 
         {
-            base.OnModelCreating(modelBuilder); // Buena práctica mantenerlo
+            base.OnModelCreating(modelBuilder);
             modelBuilder.UseCollation("utf8mb4_spanish_ci");
 
-            // Índices (Igual que antes)
+            // Índices 
             modelBuilder.Entity<Permiso>().HasIndex(p => p.NombreSistema).IsUnique();
             modelBuilder.Entity<Rol>().HasIndex(r => r.Nombre).IsUnique();
 
-            // --- AQUÍ ESTÁ EL ARREGLO para traer correctamente los roles ---
+            // --- ARREGLO para traer correctamente los roles ---
             modelBuilder.Entity<Rol>()
                 .HasMany(r => r.Permisos)
                 .WithMany(p => p.Roles)
@@ -50,5 +50,7 @@ namespace Api_Tlapaleria.Data
                 );
 
         }
+
+        public DbSet<PendingOrder> PendingOrders { get; set; } //<--- Modelo de la tabla de pedidos 
     }
 }
