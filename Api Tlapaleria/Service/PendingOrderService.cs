@@ -66,5 +66,87 @@ namespace Api_Tlapaleria.Services
 
             return nuevoPedido;
         }
+        //Obtener todos los productos por proveedor 
+        public async Task<PagedResponse<PendingOrder>> GetPendingOrdersBySupplierAsync(int supplierId, int pageNumber = 1, int pageSize = 50)
+        {
+            // 1. Armamos la consulta base incluyendo las relaciones
+            var query = _context.PendingOrders
+                .Include(po => po.Product)
+                .Include(po => po.Supplier)
+                .Include(po => po.User) // Opcional: Para saber qué empleado lo anotó
+                .AsQueryable();
+
+            // 2. Filtro obligatorio por Proveedor
+            if (supplierId == 0)
+            {
+                // Si mandan 0, traemos los que todavía NO tienen proveedor asignado
+                query = query.Where(po => po.SupplierId == null);
+            }
+            else
+            {
+                // Si mandan un ID mayor a 0, traemos los de ese proveedor específico
+                query = query.Where(po => po.SupplierId == supplierId);
+            }
+
+            // Opcional pero recomendado: No mostrar los que ya están completados en esta vista
+            // para mantener la libreta limpia. Si quieres ver el historial completo, puedes quitar esta línea.
+            query = query.Where(po => po.Status != "Completado");
+
+            // 3. Contamos el total para la paginación
+            var totalItems = await query.CountAsync();
+            var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
+
+            // 4. Traemos la página solicitada, ordenando los más recientes primero
+            var pedidos = await query
+                .OrderByDescending(po => po.CreatedAt)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return new PagedResponse<PendingOrder>
+            {
+                Data = pedidos,
+                TotalItems = totalItems,
+                TotalPages = totalPages,
+                CurrentPage = pageNumber
+            };
+        }
+        //Buscador por ID 
+        public async Task<PendingOrder> GetPendingOrderByIdAsync(int id)
+        {
+            var pedido = await _context.PendingOrders
+                .Include(po => po.Product)
+                .Include(po => po.Supplier)
+                .Include(po => po.User) // Traemos quién lo anotó
+                .FirstOrDefaultAsync(po => po.Id == id);
+
+            if (pedido == null)
+                throw new Exception($"El pedido pendiente con ID {id} no fue encontrado.");
+
+            return pedido;
+        }
+
+        //Buscador por nombre,codigo, codigo de barras 
+        public async Task<List<PendingOrder>> SearchPendingOrdersAsync(string searchTerm)
+        {
+            if (string.IsNullOrWhiteSpace(searchTerm))
+                return new List<PendingOrder>();
+
+            var term = searchTerm.ToLower().Trim();
+
+            var resultados = await _context.PendingOrders
+                .Include(po => po.Product)
+                .Include(po => po.Supplier)
+                .Include(po => po.User)
+                .Where(po =>
+                    po.Product.Name.ToLower().Contains(term) || // Busca en el nombre del producto
+                    po.Product.InternalCode.ToLower().Contains(term) || // Busca en el código interno
+                    po.Product.Barcode == term // Busca si escanean el código
+                )
+                .OrderByDescending(po => po.CreatedAt) // Los más recientes primero
+                .ToListAsync();
+
+            return resultados;
+        }
     }
 }

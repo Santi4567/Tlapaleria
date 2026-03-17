@@ -49,5 +49,64 @@ namespace Api_Tlapaleria.Controllers
                 return BadRequest(ApiResponse<object>.Error(ex.Message));
             }
         }
+        // GET: api/pendingorders/supplier/1?page=1&pageSize=50
+        [HttpGet("supplier/{supplierId}")]
+        [Authorize]
+        [RequierePermiso("view.pendingorders")] // Aquí está tu permiso sugerido
+        public async Task<ActionResult<ApiResponse<PagedResponse<PendingOrder>>>> GetBySupplier(
+            int supplierId,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 50)
+        {
+            try
+            {
+                // Validaciones básicas de seguridad para la paginación
+                if (page < 1) page = 1;
+                if (pageSize < 1) pageSize = 50;
+                if (pageSize > 100) pageSize = 100;
+
+                var resultadoPaginado = await _pendingOrderService.GetPendingOrdersBySupplierAsync(supplierId, page, pageSize);
+
+                return Ok(ApiResponse<PagedResponse<PendingOrder>>.Exito(resultadoPaginado, "Lista de pendientes obtenida correctamente."));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
         }
+        // GET: api/pendingorders/{id}
+        [HttpGet("{id}")]
+        [Authorize]
+        [RequierePermiso("view.pendingorders")]
+        public async Task<ActionResult<ApiResponse<PendingOrder>>> GetById(int id)
+        {
+            try
+            {
+                var pedido = await _pendingOrderService.GetPendingOrderByIdAsync(id);
+                return Ok(ApiResponse<PendingOrder>.Exito(pedido));
+            }
+            catch (Exception ex)
+            {
+                // Usamos NotFound (404) cuando buscamos un ID exacto y no existe
+                return NotFound(ApiResponse<object>.Error(ex.Message));
+            }
+        }
+
+        // GET: api/pendingorders/search?query=clavos
+        [HttpGet("search")]
+        [Authorize]
+        [RequierePermiso("view.pendingorders")]
+        public async Task<ActionResult<ApiResponse<List<PendingOrder>>>> Search([FromQuery] string? query = "")
+        {
+            try
+            {
+                var pedidos = await _pendingOrderService.SearchPendingOrdersAsync(query);
+                return Ok(ApiResponse<List<PendingOrder>>.Exito(pedidos, "Búsqueda completada"));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
+    }
 }
