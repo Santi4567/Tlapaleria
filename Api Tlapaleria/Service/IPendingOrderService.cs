@@ -13,5 +13,7 @@ namespace Api_Tlapaleria.Services
         Task<PendingOrder> GetPendingOrderByIdAsync(int id);
         //Buscador por nombre 
         Task<List<PendingOrder>> SearchPendingOrdersAsync(string searchTerm);
+        // Actualizacion de datos
+        Task<PendingOrder> UpdatePendingOrderAsync(int id, UpdatePendingOrderDto datos, int userId);
     }
 }

@@ -148,5 +148,57 @@ namespace Api_Tlapaleria.Services
 
             return resultados;
         }
+
+        //Actualizacion de Datos
+        public async Task<PendingOrder> UpdatePendingOrderAsync(int id, UpdatePendingOrderDto datos, int userId)
+        {
+            // 1. Buscamos el pedido existente
+            var pedidoExistente = await _context.PendingOrders
+                .Include(po => po.Product)
+                .Include(po => po.Supplier)
+                .FirstOrDefaultAsync(po => po.Id == id);
+
+            if (pedidoExistente == null)
+                throw new Exception($"El pedido con ID {id} no existe.");
+
+            // Opcional pero recomendado: No dejar editar pedidos que ya se completaron
+            if (pedidoExistente.Status == "Completado")
+                throw new Exception("No puedes modificar un pedido que ya ha sido completado y recibido.");
+
+            // 2. Validamos el Proveedor (si es que mandaron uno o lo cambiaron)
+            if (datos.SupplierId.HasValue && datos.SupplierId != pedidoExistente.SupplierId)
+            {
+                var proveedor = await _context.Suppliers
+                    .FirstOrDefaultAsync(s => s.Id == datos.SupplierId.Value && s.IsActive);
+
+                if (proveedor == null)
+                    throw new Exception("El proveedor seleccionado no existe o se encuentra inactivo.");
+            }
+
+            // 3. Validar que el usuario que está editando exista
+            var usuario = await _context.Users
+                .FirstOrDefaultAsync(u => u.Id == userId && u.IsActive);
+
+            if (usuario == null)
+                throw new Exception("El usuario autenticado no es válido o está inactivo.");
+
+            // 4. Aplicamos los cambios permitidos
+            pedidoExistente.QuantityText = datos.QuantityText;
+            pedidoExistente.Notes = datos.Notes;
+            pedidoExistente.SupplierId = datos.SupplierId;
+
+            // 5. Actualizamos los rastros de auditoría
+            pedidoExistente.UserId = userId; // El último que le metió mano
+            pedidoExistente.UpdatedAt = DateTime.Now; // Fecha del cambio
+
+            // 6. Guardamos en base de datos
+            await _context.SaveChangesAsync();
+
+            // Recargamos el proveedor por si lo cambiaron, para que el JSON regrese con el nombre correcto
+            if (pedidoExistente.SupplierId.HasValue)
+                await _context.Entry(pedidoExistente).Reference(p => p.Supplier).LoadAsync();
+
+            return pedidoExistente;
+        }
     }
 }

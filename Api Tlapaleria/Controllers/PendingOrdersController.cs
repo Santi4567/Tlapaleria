@@ -108,5 +108,32 @@ namespace Api_Tlapaleria.Controllers
                 return BadRequest(ApiResponse<object>.Error(ex.Message));
             }
         }
+        // PUT: api/pendingorders/{id}
+        [HttpPut("{id}")]
+        [Authorize]
+        [RequierePermiso("edit.pendingorders")] // Permiso específico para editar
+        public async Task<ActionResult<ApiResponse<PendingOrder>>> Update(int id, [FromBody] UpdatePendingOrderDto datos)
+        {
+            try
+            {
+                // 1. Extraemos el ID del usuario desde el JWT
+                var claimId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                              ?? User.FindFirst("id")?.Value;
+
+                if (string.IsNullOrEmpty(claimId) || !int.TryParse(claimId, out int userIdToken))
+                {
+                    return Unauthorized(ApiResponse<object>.Error("Token inválido o no contiene la identidad del usuario."));
+                }
+
+                // 2. Ejecutamos la actualización
+                var pedidoActualizado = await _pendingOrderService.UpdatePendingOrderAsync(id, datos, userIdToken);
+
+                return Ok(ApiResponse<PendingOrder>.Exito(pedidoActualizado, "El pedido ha sido actualizado correctamente."));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
     }
 }
