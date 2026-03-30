@@ -17,11 +17,12 @@ namespace Api_Tlapaleria.Services
         public async Task<PendingOrder> CreatePendingOrderAsync(CreatePendingOrderDto datos, int userId) // Recibimos el userId aquí
         {
             //Validamos que el producto no exista dentro de la tabal de pedidos para evitar duplicados 
-            var pedidoExistente = await _context.PendingOrders
-                .FirstOrDefaultAsync(po => po.ProductId == datos.ProductId && po.Status != "Completado");
+            var pedidoExistente = await _context.PendingOrders.FirstOrDefaultAsync(po => po.ProductId == datos.ProductId && po.Status == "Pendiente");
 
             if (pedidoExistente != null)
-                throw new Exception("El producto ya está agregado, si necesita cambiar algo actualícelo.");
+            {
+                throw new Exception("El producto ya está anotado en la libreta como Pendiente. Si necesita cambiar algo, actualícelo.");
+            }
 
             var producto = await _context.Products
                 .FirstOrDefaultAsync(p => p.Id == datos.ProductId && p.IsActive);
@@ -66,37 +67,51 @@ namespace Api_Tlapaleria.Services
 
             return nuevoPedido;
         }
-        //Obtener todos los productos por proveedor 
-        public async Task<PagedResponse<PendingOrder>> GetPendingOrdersBySupplierAsync(int supplierId, int pageNumber = 1, int pageSize = 50)
+        //Obtener todos los productos por proveedor y por estado 
+        public async Task<PagedResponse<PendingOrder>> GetPendingOrdersBySupplierAsync(int supplierId, string status = "Pendiente", int pageNumber = 1, int pageSize = 50)
         {
-            // 1. Armamos la consulta base incluyendo las relaciones
+            // 1. Validar que el estado sea válido (incluyendo nuestro comodín)
+            var estadosValidos = new List<string> { "Pendiente", "Cancelado", "Completado", "Todos" };
+
+            // Si el front manda minúsculas o espacios extra, lo limpiamos y capitalizamos la primera letra
+            // (Opcional, pero ayuda a evitar errores de tipeo del frontend)
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                status = char.ToUpper(status[0]) + status.Substring(1).ToLower();
+            }
+
+            if (!estadosValidos.Contains(status))
+                throw new Exception($"El filtro de estado '{status}' no es válido. Usa uno de estos: {string.Join(", ", estadosValidos)}.");
+
+            // 2. Armamos la consulta base
             var query = _context.PendingOrders
                 .Include(po => po.Product)
                 .Include(po => po.Supplier)
-                .Include(po => po.User) // Opcional: Para saber qué empleado lo anotó
+                .Include(po => po.User)
                 .AsQueryable();
 
-            // 2. Filtro obligatorio por Proveedor
+            // 3. Filtro obligatorio por Proveedor
             if (supplierId == 0)
             {
-                // Si mandan 0, traemos los que todavía NO tienen proveedor asignado
                 query = query.Where(po => po.SupplierId == null);
             }
             else
             {
-                // Si mandan un ID mayor a 0, traemos los de ese proveedor específico
                 query = query.Where(po => po.SupplierId == supplierId);
             }
 
-            // Opcional pero recomendado: No mostrar los que ya están completados en esta vista
-            // para mantener la libreta limpia. Si quieres ver el historial completo, puedes quitar esta línea.
-            query = query.Where(po => po.Status != "Completado");
+            // --- 4. LA MAGIA HÍBRIDA (Filtro por Estado) ---
+            if (status != "Todos")
+            {
+                // Si no mandaron el comodín, filtramos estrictamente por lo que pidieron
+                query = query.Where(po => po.Status == status);
+            }
+            // Si mandaron "Todos", simplemente nos saltamos este Where y la BD trae todo el historial
 
-            // 3. Contamos el total para la paginación
+            // 5. Paginación y ejecución
             var totalItems = await query.CountAsync();
             var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
 
-            // 4. Traemos la página solicitada, ordenando los más recientes primero
             var pedidos = await query
                 .OrderByDescending(po => po.CreatedAt)
                 .Skip((pageNumber - 1) * pageSize)
@@ -126,27 +141,67 @@ namespace Api_Tlapaleria.Services
             return pedido;
         }
 
-        //Buscador por nombre,codigo, codigo de barras 
-        public async Task<List<PendingOrder>> SearchPendingOrdersAsync(string searchTerm)
+        //Buscador por nombre,codigo, codigo de barras con estado 
+        public async Task<PagedResponse<PendingOrder>> SearchPendingOrdersAsync(string searchTerm, string status = "Todos", int pageNumber = 1, int pageSize = 50)
         {
+            // Si no hay texto, regresamos una respuesta paginada vacía
             if (string.IsNullOrWhiteSpace(searchTerm))
-                return new List<PendingOrder>();
+                return new PagedResponse<PendingOrder>
+                {
+                    Data = new List<PendingOrder>(),
+                    TotalItems = 0,
+                    TotalPages = 0,
+                    CurrentPage = pageNumber
+                };
 
             var term = searchTerm.ToLower().Trim();
 
-            var resultados = await _context.PendingOrders
+            // 1. Validar y limpiar el estado
+            var estadosValidos = new List<string> { "Pendiente", "Cancelado", "Completado", "Todos" };
+
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                status = char.ToUpper(status[0]) + status.Substring(1).ToLower();
+            }
+
+            if (!estadosValidos.Contains(status))
+                throw new Exception($"El filtro de estado '{status}' no es válido. Usa: {string.Join(", ", estadosValidos)}.");
+
+            // 2. Armamos la consulta base con la búsqueda de texto
+            var query = _context.PendingOrders
                 .Include(po => po.Product)
                 .Include(po => po.Supplier)
                 .Include(po => po.User)
                 .Where(po =>
-                    po.Product.Name.ToLower().Contains(term) || // Busca en el nombre del producto
-                    po.Product.InternalCode.ToLower().Contains(term) || // Busca en el código interno
-                    po.Product.Barcode == term // Busca si escanean el código
+                    po.Product.Name.ToLower().Contains(term) ||
+                    po.Product.InternalCode.ToLower().Contains(term) ||
+                    po.Product.Barcode == term
                 )
+                .AsQueryable();
+
+            // 3. Aplicamos el filtro híbrido de estado
+            if (status != "Todos")
+            {
+                query = query.Where(po => po.Status == status);
+            }
+
+            // --- 4. LA NUEVA MAGIA: Paginación en la búsqueda ---
+            var totalItems = await query.CountAsync();
+            var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
+
+            var resultados = await query
                 .OrderByDescending(po => po.CreatedAt) // Los más recientes primero
+                .Skip((pageNumber - 1) * pageSize)     // Nos saltamos las páginas anteriores
+                .Take(pageSize)                        // Tomamos solo los de esta página
                 .ToListAsync();
 
-            return resultados;
+            return new PagedResponse<PendingOrder>
+            {
+                Data = resultados,
+                TotalItems = totalItems,
+                TotalPages = totalPages,
+                CurrentPage = pageNumber
+            };
         }
 
         //Actualizacion de Datos
@@ -197,6 +252,42 @@ namespace Api_Tlapaleria.Services
             // Recargamos el proveedor por si lo cambiaron, para que el JSON regrese con el nombre correcto
             if (pedidoExistente.SupplierId.HasValue)
                 await _context.Entry(pedidoExistente).Reference(p => p.Supplier).LoadAsync();
+
+            return pedidoExistente;
+        }
+        //Actualizar el estado del producto
+        public async Task<PendingOrder> UpdatePendingOrderStatusAsync(int id, string status, int userId)
+        {
+            // 1. Validar que el estado enviado sea uno de los oficiales
+            var estadosValidos = new List<string> { "Pendiente", "Cancelado", "Completado" };
+
+            if (!estadosValidos.Contains(status))
+                throw new Exception($"El estado '{status}' no es válido. Usa uno de estos: {string.Join(", ", estadosValidos)}");
+
+            // 2. Buscar el pedido
+            var pedidoExistente = await _context.PendingOrders
+                .Include(po => po.Product)
+                .Include(po => po.Supplier)
+                .FirstOrDefaultAsync(po => po.Id == id);
+
+            if (pedidoExistente == null)
+                throw new Exception($"El pedido con ID {id} no existe.");
+
+            // 3. Validar al usuario que está deslizando la tarjeta
+            var usuario = await _context.Users
+                .FirstOrDefaultAsync(u => u.Id == userId && u.IsActive);
+
+            if (usuario == null)
+                throw new Exception("El usuario autenticado no es válido o está inactivo.");
+
+            // 4. Aplicar el cambio de estado
+            pedidoExistente.Status = status;
+
+            // 5. Dejar rastro de quién lo hizo y a qué hora
+            pedidoExistente.UserId = userId;
+            pedidoExistente.UpdatedAt = DateTime.Now;
+
+            await _context.SaveChangesAsync();
 
             return pedidoExistente;
         }

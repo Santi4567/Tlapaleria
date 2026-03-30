@@ -49,25 +49,25 @@ namespace Api_Tlapaleria.Controllers
                 return BadRequest(ApiResponse<object>.Error(ex.Message));
             }
         }
-        // GET: api/pendingorders/supplier/1?page=1&pageSize=50
+        // GET: api/pendingorders/supplier/1?status=Todos&page=1&pageSize=50
         [HttpGet("supplier/{supplierId}")]
         [Authorize]
-        [RequierePermiso("view.pendingorders")] // Aquí está tu permiso sugerido
+        [RequierePermiso("view.pendingorders")]
         public async Task<ActionResult<ApiResponse<PagedResponse<PendingOrder>>>> GetBySupplier(
             int supplierId,
+            [FromQuery] string status = "Pendiente", // Recibimos el estado dinámico
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 50)
         {
             try
             {
-                // Validaciones básicas de seguridad para la paginación
                 if (page < 1) page = 1;
                 if (pageSize < 1) pageSize = 50;
                 if (pageSize > 100) pageSize = 100;
 
-                var resultadoPaginado = await _pendingOrderService.GetPendingOrdersBySupplierAsync(supplierId, page, pageSize);
+                var resultadoPaginado = await _pendingOrderService.GetPendingOrdersBySupplierAsync(supplierId, status, page, pageSize);
 
-                return Ok(ApiResponse<PagedResponse<PendingOrder>>.Exito(resultadoPaginado, "Lista de pendientes obtenida correctamente."));
+                return Ok(ApiResponse<PagedResponse<PendingOrder>>.Exito(resultadoPaginado));
             }
             catch (Exception ex)
             {
@@ -92,16 +92,26 @@ namespace Api_Tlapaleria.Controllers
             }
         }
 
-        // GET: api/pendingorders/search?query=clavos
+        // GET: api/pendingorders/search?query=clavos&status=Todos&page=1&pageSize=50
         [HttpGet("search")]
         [Authorize]
         [RequierePermiso("view.pendingorders")]
-        public async Task<ActionResult<ApiResponse<List<PendingOrder>>>> Search([FromQuery] string? query = "")
+        public async Task<ActionResult<ApiResponse<PagedResponse<PendingOrder>>>> Search(
+            [FromQuery] string? query = "",
+            [FromQuery] string status = "Todos",
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 50) // Nuevos parámetros
         {
             try
             {
-                var pedidos = await _pendingOrderService.SearchPendingOrdersAsync(query);
-                return Ok(ApiResponse<List<PendingOrder>>.Exito(pedidos, "Búsqueda completada"));
+                // Protecciones para que no rompan la paginación
+                if (page < 1) page = 1;
+                if (pageSize < 1) pageSize = 50;
+                if (pageSize > 100) pageSize = 100; // Máximo 100 por petición por seguridad
+
+                var resultadosPaginados = await _pendingOrderService.SearchPendingOrdersAsync(query, status, page, pageSize);
+
+                return Ok(ApiResponse<PagedResponse<PendingOrder>>.Exito(resultadosPaginados, "Búsqueda completada"));
             }
             catch (Exception ex)
             {
@@ -129,6 +139,33 @@ namespace Api_Tlapaleria.Controllers
                 var pedidoActualizado = await _pendingOrderService.UpdatePendingOrderAsync(id, datos, userIdToken);
 
                 return Ok(ApiResponse<PendingOrder>.Exito(pedidoActualizado, "El pedido ha sido actualizado correctamente."));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
+        // PATCH: api/pendingorders/{id}/status
+        [HttpPatch("{id}/status")]
+        [Authorize]
+        [RequierePermiso("edit.pendingorders")]
+        public async Task<ActionResult<ApiResponse<PendingOrder>>> UpdateStatus(int id, [FromBody] UpdatePendingOrderStatusDto datos)
+        {
+            try
+            {
+                // 1. Extraemos quién está haciendo el Swipe
+                var claimId = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value
+                              ?? User.FindFirst("id")?.Value;
+
+                if (string.IsNullOrEmpty(claimId) || !int.TryParse(claimId, out int userIdToken))
+                {
+                    return Unauthorized(ApiResponse<object>.Error("Token inválido."));
+                }
+
+                // 2. Ejecutamos el cambio de estado
+                var pedidoActualizado = await _pendingOrderService.UpdatePendingOrderStatusAsync(id, datos.Status, userIdToken);
+
+                return Ok(ApiResponse<PendingOrder>.Exito(pedidoActualizado, $"El estado del pedido cambió exitosamente a '{datos.Status}'."));
             }
             catch (Exception ex)
             {

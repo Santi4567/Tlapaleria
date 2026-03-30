@@ -27,4 +27,10 @@ namespace Api_Tlapaleria.DTOs
 
         public string? Notes { get; set; }
     }
+    public class UpdatePendingOrderStatusDto
+    {
+        [Required(ErrorMessage = "El estado es obligatorio.")]
+        [MaxLength(30)]
+        public string Status { get; set; }
+    }
 }
