@@ -31,10 +31,13 @@ builder.Services.AddScoped<Api_Tlapaleria.Services.IProductService, Api_Tlapaler
 // Servicio de Pedidos
 builder.Services.AddScoped<Api_Tlapaleria.Services.IPendingOrderService, Api_Tlapaleria.Services.PendingOrderService>();
 
-// Y asegúrate de haber registrado el PermissionService también:
+//Servicio de Kardex de Productos 
+builder.Services.AddScoped<IInventoryService, InventoryService>();
+
+// PermissionService
 builder.Services.AddScoped<Api_Tlapaleria.Services.PermissionService>();
 
-// 3. CONFIGURACIÓN DE JWT Y COOKIES (NUEVO - ¡IMPORTANTE!)
+//CONFIGURACIÓN DE JWT Y COOKIES
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -99,7 +102,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 }
             },
 
-            // 3. PERSONALIZAR RESPUESTA DE ERROR (Para que salga success: false en JSON)
+            // 3.RESPUESTA DE ERROR (Para que salga success: false en JSON)
             OnChallenge = context =>
             {
                 // Esto evita el comportamiento por defecto (que solo manda un 401 vacío)
@@ -138,7 +141,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-// 4. ACTIVAR LA SEGURIDAD (NUEVO)
+// 4. ACTIVAR LA SEGURIDAD
 // El orden importa: Primero Authenticate (¿Quién eres?) luego Authorize (¿Tienes permiso?)
 app.UseAuthentication();
 app.UseAuthorization();

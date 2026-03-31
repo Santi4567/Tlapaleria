@@ -52,5 +52,7 @@ namespace Api_Tlapaleria.Data
         }
 
         public DbSet<PendingOrder> PendingOrders { get; set; } //<--- Modelo de la tabla de pedidos 
+
+        public DbSet<InventoryMovement> InventoryMovements { get; set; } //<--- Modelo de la tabla de Kardex
     }
 }
