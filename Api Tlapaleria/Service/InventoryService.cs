@@ -82,5 +82,38 @@ namespace Api_Tlapaleria.Services
                 throw; // Lanzamos el error hacia el controlador
             }
         }
+        public async Task<PagedResponse<InventoryMovement>> GetMovementsByProductIdAsync(int productId, int pageNumber = 1, int pageSize = 50)
+        {
+            // 1. Verificamos que el producto realmente exista antes de buscar su historial
+            var productoExiste = await _context.Products.AnyAsync(p => p.Id == productId);
+            if (!productoExiste)
+                throw new Exception($"El producto con ID {productId} no existe.");
+
+            // 2. Armamos la consulta a la tabla de Kardex
+            var query = _context.InventoryMovements
+                .Include(m => m.Product) // Para tener el nombre, código y unidad de medida
+                .Include(m => m.User)    // Para saber quién hizo cada movimiento
+                .Where(m => m.ProductId == productId)
+                .AsQueryable();
+
+            // 3. Contamos el total para la paginación
+            var totalItems = await query.CountAsync();
+            var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
+
+            // 4. Traemos solo la página que pidió el frontend, ordenado por fecha (el más nuevo primero)
+            var movimientos = await query
+                .OrderByDescending(m => m.CreatedAt)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return new PagedResponse<InventoryMovement>
+            {
+                Data = movimientos,
+                TotalItems = totalItems,
+                TotalPages = totalPages,
+                CurrentPage = pageNumber
+            };
+        }
     }
 }

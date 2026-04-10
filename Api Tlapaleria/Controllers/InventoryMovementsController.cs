@@ -48,5 +48,30 @@ namespace Api_Tlapaleria.Controllers
                 return BadRequest(ApiResponse<object>.Error(ex.Message));
             }
         }
+        // GET: api/inventorymovements/product/5?page=1&pageSize=20
+        [HttpGet("product/{productId}")]
+        [Authorize]
+        [RequierePermiso("view.inventorymovements")] // Asignamos el permiso de lectura
+        public async Task<ActionResult<ApiResponse<PagedResponse<InventoryMovement>>>> GetByProduct(
+            int productId,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 50)
+        {
+            try
+            {
+                // Protecciones de paginación
+                if (page < 1) page = 1;
+                if (pageSize < 1) pageSize = 50;
+                if (pageSize > 100) pageSize = 100;
+
+                var historial = await _inventoryService.GetMovementsByProductIdAsync(productId, page, pageSize);
+
+                return Ok(ApiResponse<PagedResponse<InventoryMovement>>.Exito(historial, "Kardex obtenido correctamente."));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
     }
 }
