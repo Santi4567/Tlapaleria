@@ -37,6 +37,9 @@ builder.Services.AddScoped<IInventoryService, InventoryService>();
 // PermissionService
 builder.Services.AddScoped<Api_Tlapaleria.Services.PermissionService>();
 
+//Servicio de venta(Sales service)
+builder.Services.AddScoped<ISaleService, SaleService>();
+
 //CONFIGURACIÓN DE JWT Y COOKIES
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
