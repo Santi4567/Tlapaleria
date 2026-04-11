@@ -48,5 +48,30 @@ namespace Api_Tlapaleria.Controllers
                 return BadRequest(ApiResponse<object>.Error(ex.Message));
             }
         }
+
+        // GET: api/sales?searchFolio=123&page=1&pageSize=50
+        [HttpGet]
+        [RequierePermiso("view.sales")] // Permiso para ver el historial
+        public async Task<ActionResult<ApiResponse<PagedResponse<Sale>>>> GetSales(
+            [FromQuery] string? searchFolio = null,
+            [FromQuery] int page = 1,
+            [FromQuery] int pageSize = 50)
+        {
+            try
+            {
+                // Protecciones de paginación para evitar abusos
+                if (page < 1) page = 1;
+                if (pageSize < 1) pageSize = 50;
+                if (pageSize > 100) pageSize = 100; // Máximo 100 tickets por página
+
+                var historialVentas = await _saleService.GetSalesAsync(searchFolio, page, pageSize);
+
+                return Ok(ApiResponse<PagedResponse<Sale>>.Exito(historialVentas, "Historial de ventas obtenido."));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
     }
 }

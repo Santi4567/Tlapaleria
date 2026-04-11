@@ -104,5 +104,41 @@ namespace Api_Tlapaleria.Services
                 throw;
             }
         }
+        // Busqueda de Venta en tabla Sale
+        // consulta flexible.
+        // usamos .Contains() para que si el folio es TKT-2604111609-8492,
+        // el cajero pueda encontrarlo con solo teclear 8492 o 260411.
+        public async Task<PagedResponse<Sale>> GetSalesAsync(string? searchFolio = null, int pageNumber = 1, int pageSize = 50)
+        {
+            // Empezamos armando la consulta, incluyendo al usuario para saber quién cobró
+            var query = _context.Sales
+                .Include(s => s.User)
+                .AsQueryable();
+
+            // Si el frontend nos mandó algo en la caja de búsqueda, filtramos
+            if (!string.IsNullOrWhiteSpace(searchFolio))
+            {
+                query = query.Where(s => s.Folio.Contains(searchFolio));
+            }
+
+            // Contamos el total de tickets para las matemáticas de la paginación
+            var totalItems = await query.CountAsync();
+            var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
+
+            // Traemos la página solicitada, ordenando siempre del más nuevo al más viejo
+            var sales = await query
+                .OrderByDescending(s => s.CreatedAt)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return new PagedResponse<Sale>
+            {
+                Data = sales,
+                TotalItems = totalItems,
+                TotalPages = totalPages,
+                CurrentPage = pageNumber
+            };
+        }
     }
 }

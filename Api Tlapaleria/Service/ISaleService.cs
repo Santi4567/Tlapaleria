@@ -5,7 +5,10 @@ namespace Api_Tlapaleria.Services
 {
     public interface ISaleService
     {
-        // Nueva venta 
+        // Crear un nueva venta 
         Task<Sale> CreateSaleAsync(CreateSaleDto saleDto, int userId);
+
+        // Buscador hibrido(Muestra todo/Buscador)
+        Task<PagedResponse<Sale>> GetSalesAsync(string? searchFolio = null, int pageNumber = 1, int pageSize = 50);
     }
 }
