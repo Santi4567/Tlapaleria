@@ -20,7 +20,9 @@ namespace Api_Tlapaleria.Services
 
             try
             {
-                string folio = $"TKT-{DateTime.Now:yyMMddHHmmss}";
+                //Creacion de Folio unico para cada transaccion 
+                var random = new Random();
+                string folio = $"TKT-{DateTime.Now:yyMMddHHmmssfff}-{random.Next(1000, 10000)}";
 
                 var venta = new Sale
                 {
