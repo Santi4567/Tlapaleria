@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Authentication.JwtBearer; // Necesario para JWT
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens; // Necesario para validar el token
 using System.Text;
+using System.Text.Json.Serialization;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -14,12 +16,18 @@ builder.Services.AddDbContext<TlapaleriaContext>(options =>
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString));
 });
 
-// 2. INYECCIÓN DE DEPENDENCIAS (NUEVO)
-// Aquí registramos tu servicio de Login para poder usarlo en el Controller
+//Evita bucles de lectura en json(NO BORRAR/DONT DELETE)
+builder.Services.AddControllers().AddJsonOptions(x =>
+{
+    // Ignora los ciclos infinitos en toda la API
+    x.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
+});
+
+// 2. INYECCIÓN DE DEPENDENCIAS 
+// Aquí registramos los servicios
 builder.Services.AddScoped<AuthService>();
 
 //Servicio de Usuarios
-
 builder.Services.AddScoped<Api_Tlapaleria.Services.IUserService, Api_Tlapaleria.Services.UserService>();
 
 //Servicio de suppliers
@@ -32,13 +40,15 @@ builder.Services.AddScoped<Api_Tlapaleria.Services.IProductService, Api_Tlapaler
 builder.Services.AddScoped<Api_Tlapaleria.Services.IPendingOrderService, Api_Tlapaleria.Services.PendingOrderService>();
 
 //Servicio de Kardex de Productos 
-builder.Services.AddScoped<IInventoryService, InventoryService>();
+builder.Services.AddScoped<Api_Tlapaleria.Services.IInventoryService, Api_Tlapaleria.Services.InventoryService>();
+
+//Servicio de venta(Sales service)
+builder.Services.AddScoped<Api_Tlapaleria.Services.ISaleService, Api_Tlapaleria.Services.SaleService>();
 
 // PermissionService
 builder.Services.AddScoped<Api_Tlapaleria.Services.PermissionService>();
 
-//Servicio de venta(Sales service)
-builder.Services.AddScoped<ISaleService, SaleService>();
+
 
 //CONFIGURACIÓN DE JWT Y COOKIES
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)

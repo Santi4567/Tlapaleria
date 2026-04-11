@@ -35,8 +35,7 @@ namespace Api_Tlapaleria.Models
         public string? Brand { get; set; }
 
         [Required]
-        [Column(TypeName = "decimal(10,3)")]
-        public decimal Quantity { get; set; } // Cuántas cajas se vendieron
+        public int Quantity { get; set; } // Cuántas cajas se vendieron
 
         // Guardamos el multiplicador por si alguna vez cambia en el catálogo, 
         // saber cuánto stock le quitó este ticket a la base.
