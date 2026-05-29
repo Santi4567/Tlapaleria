@@ -57,5 +57,8 @@ namespace Api_Tlapaleria.Data
 
         public DbSet<Sale> Sales { get; set; }//<--- Modelo de la tabla de Sales
         public DbSet<SaleDetail> SaleDetails { get; set; }//<--- Modelo de la tabla de SaleDetails
+
+        public DbSet<SaleReturn> Returns { get; set; }//<--- Modelo de la tabla de Returns
+        public DbSet<ReturnDetail> ReturnDetails { get; set; }//<--- Modelo de la tabla de ReturnDetails
     }
 }
