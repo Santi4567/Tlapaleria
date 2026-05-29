@@ -37,7 +37,7 @@ namespace Api_Tlapaleria.Models
         public string? Brand { get; set; }
 
         [Required]
-        public int Quantity { get; set; }
+        public decimal Quantity { get; set; }
 
         [Required]
         [Column(TypeName = "decimal(10,3)")]

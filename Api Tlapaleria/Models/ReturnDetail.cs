@@ -27,7 +27,7 @@ namespace Api_Tlapaleria.Models
         public SaleDetail? SaleDetail { get; set; }
 
         [Required]
-        public int QuantityReturned { get; set; } // Unidades enteras devueltas
+        public decimal QuantityReturned { get; set; } // Unidades enteras devueltas
 
         [Required]
         [Column(TypeName = "decimal(10,2)")]
