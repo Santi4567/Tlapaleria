@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using System.Text.Json.Serialization;
 
 namespace Api_Tlapaleria.Models
 {
@@ -11,44 +12,50 @@ namespace Api_Tlapaleria.Models
 
         [Required]
         public int SaleId { get; set; }
+        [JsonIgnore]
         [ForeignKey("SaleId")]
         public Sale? Sale { get; set; }
 
-        // --- RELACIONES ---
         [Required]
         public int ProductId { get; set; }
+        [JsonIgnore]
         [ForeignKey("ProductId")]
         public Product? Product { get; set; }
 
-        // NUEVA RELACIÓN: Para saber exactamente en qué formato se vendió
         [Required]
         public int PresentationId { get; set; }
+        [JsonIgnore]
         [ForeignKey("PresentationId")]
         public ProductPresentation? Presentation { get; set; }
 
-        // --- LA LIBRETA CON LAPICERO ---
+        // --- LA LIBRETA CON LAPICERO (Snapshot) ---
         [Required]
         [MaxLength(150)]
-        public string ProductName { get; set; } = string.Empty; // Ej: "Clavos 2 Pulgadas - Caja 100 pzas"
+        public string ProductName { get; set; } = string.Empty;
 
         [MaxLength(100)]
         public string? Brand { get; set; }
 
         [Required]
-        public int Quantity { get; set; } // Cuántas cajas se vendieron
+        public int Quantity { get; set; }
 
-        // Guardamos el multiplicador por si alguna vez cambia en el catálogo, 
-        // saber cuánto stock le quitó este ticket a la base.
         [Required]
         [Column(TypeName = "decimal(10,3)")]
         public decimal StockFactorApplied { get; set; }
 
         [Required]
         [Column(TypeName = "decimal(10,2)")]
-        public decimal UnitPrice { get; set; } // Precio de la caja
+        public decimal UnitPrice { get; set; }
 
         [Required]
         [Column(TypeName = "decimal(10,2)")]
         public decimal Subtotal { get; set; }
+
+        // --- COLUMNAS PARA DEVOLUCIONES PARCIALES ---
+
+        [Required]
+        public bool IsActive { get; set; } = true; // 1 = Activo/Vendido, 0 = Devuelto
+
+        public DateTime UpdatedAt { get; set; } = DateTime.Now; // Control de fecha de la devolución
     }
 }
