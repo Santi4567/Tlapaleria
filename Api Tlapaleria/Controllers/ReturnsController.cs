@@ -4,6 +4,7 @@ using Api_Tlapaleria.Models;
 using Api_Tlapaleria.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using System.Security.Claims;
 
 namespace Api_Tlapaleria.Controllers
 {
@@ -40,6 +41,34 @@ namespace Api_Tlapaleria.Controllers
             }
             catch (Exception ex)
             {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
+
+        // POST: api/returns
+        [HttpPost]
+        [RequierePermiso("add.returns")] // Permiso específico (quizás solo para gerentes o cajeros autorizados)
+        public async Task<ActionResult<ApiResponse<SaleReturn>>> CreateReturn([FromBody] CreateReturnDto returnDto)
+        {
+            try
+            {
+                // 1. Extraemos quién está autorizando la devolución desde el Token JWT
+                var claimId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                              ?? User.FindFirst("id")?.Value;
+
+                if (string.IsNullOrEmpty(claimId) || !int.TryParse(claimId, out int userIdToken))
+                {
+                    return Unauthorized(ApiResponse<object>.Error("Token inválido o identidad no encontrada."));
+                }
+
+                // 2. Ejecutamos la transacción en la bóveda
+                var devolucion = await _returnService.CreateReturnAsync(returnDto, userIdToken);
+
+                return Ok(ApiResponse<SaleReturn>.Exito(devolucion, "¡Devolución registrada y stock actualizado con éxito!"));
+            }
+            catch (Exception ex)
+            {
+                // Si intenta devolver más de lo comprado, el servicio lanzará la excepción y caerá aquí
                 return BadRequest(ApiResponse<object>.Error(ex.Message));
             }
         }
