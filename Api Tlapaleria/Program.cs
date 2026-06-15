@@ -45,9 +45,11 @@ builder.Services.AddScoped<Api_Tlapaleria.Services.IInventoryService, Api_Tlapal
 //Servicio de venta(Sales service)
 builder.Services.AddScoped<Api_Tlapaleria.Services.ISaleService, Api_Tlapaleria.Services.SaleService>();
 
+//Servicio de Reembolsos 
+builder.Services.AddScoped<IReturnService, ReturnService>();
+
 // PermissionService
 builder.Services.AddScoped<Api_Tlapaleria.Services.PermissionService>();
-
 
 
 //CONFIGURACIÓN DE JWT Y COOKIES
