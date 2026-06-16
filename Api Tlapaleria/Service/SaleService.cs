@@ -140,5 +140,15 @@ namespace Api_Tlapaleria.Services
                 CurrentPage = pageNumber
             };
         }
+
+        public async Task<Sale?> GetSaleByIdAsync(int saleId)
+        {
+            var ticket = await _context.Sales
+                .Include(s => s.User) // Traemos los datos del cajero 
+                .Include(s => s.Details) // ¡MAGIA! Traemos todos los productos de esta venta
+                .FirstOrDefaultAsync(s => s.Id == saleId);
+
+            return ticket;
+        }
     }
 }

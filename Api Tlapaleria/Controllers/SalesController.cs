@@ -73,5 +73,27 @@ namespace Api_Tlapaleria.Controllers
                 return BadRequest(ApiResponse<object>.Error(ex.Message));
             }
         }
+
+        // GET: api/sales/{id}
+        [HttpGet("{id}")]
+        [RequierePermiso("view.sales")] // Reutilizamos el permiso de lectura
+        public async Task<ActionResult<ApiResponse<Sale>>> GetSaleById(int id)
+        {
+            try
+            {
+                var ticket = await _saleService.GetSaleByIdAsync(id);
+
+                if (ticket == null)
+                {
+                    return NotFound(ApiResponse<object>.Error($"No se encontró ningún ticket con el ID {id}."));
+                }
+
+                return Ok(ApiResponse<Sale>.Exito(ticket, "Ticket recuperado exitosamente."));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
     }
 }

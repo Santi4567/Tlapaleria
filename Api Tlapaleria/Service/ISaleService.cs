@@ -10,5 +10,8 @@ namespace Api_Tlapaleria.Services
 
         // Buscador hibrido(Muestra todo/Buscador)
         Task<PagedResponse<Sale>> GetSalesAsync(string? searchFolio = null, int pageNumber = 1, int pageSize = 50);
+
+        // Obtener una venta específica con todos sus detalles
+        Task<Sale?> GetSaleByIdAsync(int saleId);
     }
 }
