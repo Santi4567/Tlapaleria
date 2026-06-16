@@ -72,5 +72,23 @@ namespace Api_Tlapaleria.Controllers
                 return BadRequest(ApiResponse<object>.Error(ex.Message));
             }
         }
+
+        // GET: api/returns/sale/10
+        [HttpGet("sale/{saleId}")]
+        [RequierePermiso("view.returns")] // Permiso de lectura de devoluciones
+        public async Task<ActionResult<ApiResponse<List<SaleReturn>>>> GetReturnsBySaleId(int saleId)
+        {
+            try
+            {
+                var devoluciones = await _returnService.GetReturnsBySaleIdAsync(saleId);
+
+                // Si no hay devoluciones, regresamos una lista vacía con estatus 200 (es un flujo normal)
+                return Ok(ApiResponse<List<SaleReturn>>.Exito(devoluciones, "Historial de devoluciones del ticket obtenido."));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
     }
 }

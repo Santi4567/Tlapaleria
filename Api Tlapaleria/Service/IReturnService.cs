@@ -10,5 +10,8 @@ namespace Api_Tlapaleria.Services
 
         //Crear Devolucion 
         Task<SaleReturn> CreateReturnAsync(CreateReturnDto dto, int userId);
+
+        // Obtener todo el historial de devoluciones ligadas a una misma venta
+        Task<List<SaleReturn>> GetReturnsBySaleIdAsync(int saleId);
     }
 }

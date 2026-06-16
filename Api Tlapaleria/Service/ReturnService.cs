@@ -183,5 +183,18 @@ namespace Api_Tlapaleria.Services
                 throw;
             }
         }
+
+        // Obtener todo el historial de devoluciones ligadas a una misma venta
+        public async Task<List<SaleReturn>> GetReturnsBySaleIdAsync(int saleId)
+        {
+            var historialDevoluciones = await _context.Returns
+                .Include(r => r.User) // Quién autorizó
+                .Include(r => r.Details) // Qué piezas regresaron en esa operación específica
+                .Where(r => r.SaleId == saleId)
+                .OrderByDescending(r => r.CreatedAt) // La más reciente primero
+                .ToListAsync();
+
+            return historialDevoluciones;
+        }
     }
 }
