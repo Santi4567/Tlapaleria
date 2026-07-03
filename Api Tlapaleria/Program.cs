@@ -7,6 +7,17 @@ using System.Text;
 using System.Text.Json.Serialization;
 
 
+// --- PANTALLA DE CARGA ---
+Console.WriteLine(@"
+    ___    ____  ____    __    ____   ____ 
+   / _ \  |  _ \(_  _)  |  )  (  __) /    \
+  / ___ \ |  __/ _)(_   | (_/\ | _) |  ()  |
+ /_/   \_\|_)   (____)  \____/(____) \____/  
+");
+Console.WriteLine("ejecutando...");
+Console.WriteLine("versión 1.0\n");
+// -------------------------
+
 var builder = WebApplication.CreateBuilder(args);
 
 // 1. BASE DE DATOS (Esto ya lo tenías)
@@ -163,4 +174,28 @@ app.UseAuthorization();
 
 app.MapControllers();
 
+
+// --- INTERCEPTOR DE ARRANQUE EXITOSO ---
+app.Lifetime.ApplicationStarted.Register(() =>
+{
+    Console.Clear(); // Limpiamos todo el ruido de los logs de Entity Framework
+
+    Console.ForegroundColor = ConsoleColor.Cyan; // Un poco de color para la terminal
+    Console.WriteLine(@"
+    ___    ____  ____    __    ____   ____ 
+   / _ \  |  _ \(_  _)  |  )  (  __) /    \
+  / ___ \ |  __/ _)(_   | (_/\ | _) |  ()  |
+ /_/   \_\|_)   (____)  \____/(____) \____/ 
+    ");
+    Console.ResetColor();
+
+    Console.WriteLine("Running...");
+    Console.WriteLine("version 1.0");
+
+    Console.ForegroundColor = ConsoleColor.Green;
+    Console.WriteLine("s4lm0.exe\n");
+    Console.ResetColor();
+});
+
+// Arrancamos la API
 app.Run();
