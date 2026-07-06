@@ -20,7 +20,7 @@ namespace Api_Tlapaleria.Services
 
             try
             {
-                //Creacion de Folio unico para cada transaccion 
+                // Creación de Folio único para cada transacción 
                 var random = new Random();
                 string folio = $"TKT-{DateTime.Now:yyMMddHHmmssfff}-{random.Next(1000, 10000)}";
 
@@ -51,7 +51,7 @@ namespace Api_Tlapaleria.Services
                     // 2. MATEMÁTICAS DE INVENTARIO
                     decimal cantidadBaseARestar = item.Quantity * presentacion.StockFactor;
 
-                    // LÓGICA HÍBRIDA: Solo validamos y restamos si el producto lleva rastreo
+                    // LÓGICA HÍBRIDA: Solo validamos si el producto lleva rastreo
                     if (presentacion.Product.IsInventoryTracked)
                     {
                         if (presentacion.Product.CurrentStock < cantidadBaseARestar)
@@ -94,13 +94,15 @@ namespace Api_Tlapaleria.Services
 
                         _context.InventoryMovements.Add(movimientoKardex);
                     }
+                }
 
-                    _context.Sales.Add(venta);
+                // AQUÍ ESTABA EL ERROR: Estas líneas se habían perdido al pegar
+                _context.Sales.Add(venta);
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 
                 await _context.Entry(venta).Reference(v => v.User).LoadAsync();
-                return venta;
+                return venta; // <-- El return que el compilador no encontraba
             }
             catch (Exception)
             {

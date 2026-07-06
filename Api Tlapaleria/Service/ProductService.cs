@@ -56,6 +56,8 @@ namespace Api_Tlapaleria.Services
                     UnitOfMeasure = datos.UnitOfMeasure,
                     CurrentStock = datos.InitialStock,
                     IsInventoryTracked = datos.IsInventoryTracked,
+                    HasExpiration = datos.HasExpiration,           
+                    NextExpirationDate = datos.NextExpirationDate, 
                     IsActive = true
                 };
 
@@ -205,6 +207,8 @@ namespace Api_Tlapaleria.Services
                 productoExistente.ProfitMargin = datos.ProfitMargin;
                 productoExistente.UnitOfMeasure = datos.UnitOfMeasure;
                 productoExistente.IsInventoryTracked = datos.IsInventoryTracked;
+                productoExistente.HasExpiration = datos.HasExpiration;           
+                productoExistente.NextExpirationDate = datos.NextExpirationDate; 
                 // El stock NO se toca aquí.
 
                 // --- MAGIA DE LOS HIJOS (Presentaciones) ---
@@ -316,6 +320,32 @@ namespace Api_Tlapaleria.Services
             await _context.SaveChangesAsync();
 
             return true;
+        }
+
+        //Alerta de caduccidad de los productos 
+        public async Task<List<ExpiringProductDto>> GetExpiringProductsAsync()
+        {
+            // Alerta para productos que caducan en los próximos 30 días
+            DateTime limiteAlerta = DateTime.Now.AddDays(30);
+
+            var productosEnRiesgo = await _context.Products
+                .Where(p => p.IsActive
+                         && p.HasExpiration
+                         && p.NextExpirationDate != null
+                         && p.NextExpirationDate <= limiteAlerta)
+                .Select(p => new ExpiringProductDto
+                {
+                    Id = p.Id,
+                    InternalCode = p.InternalCode,
+                    Name = p.Name,
+                    NextExpirationDate = p.NextExpirationDate,
+                    // Calculamos los días restantes
+                    DaysRemaining = (p.NextExpirationDate.Value - DateTime.Now).Days
+                })
+                .OrderBy(p => p.NextExpirationDate) // Los más urgentes hasta arriba
+                .ToListAsync();
+
+            return productosEnRiesgo;
         }
     }
 }

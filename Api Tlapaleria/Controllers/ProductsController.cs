@@ -4,6 +4,7 @@ using Api_Tlapaleria.Models;
 using Api_Tlapaleria.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 
 namespace Api_Tlapaleria.Controllers
 {
@@ -141,6 +142,14 @@ namespace Api_Tlapaleria.Controllers
             {
                 return BadRequest(ApiResponse<object>.Error(ex.Message));
             }
+        }
+
+        //Alertas de caducidad de los productos 
+        [HttpGet("alerts/expiring-soon")]
+        public async Task<IActionResult> GetExpiringProducts()
+        {
+            var productos = await _productService.GetExpiringProductsAsync();
+            return Ok(productos);
         }
     }
 }

@@ -55,7 +55,6 @@ namespace Api_Tlapaleria.Services
         //Crear una devolucion 
         public async Task<SaleReturn> CreateReturnAsync(CreateReturnDto dto, int userId)
         {
-            // 1. INICIAMOS LA BÓVEDA (Transacción)
             using var transaction = await _context.Database.BeginTransactionAsync();
 
             try
@@ -140,11 +139,11 @@ namespace Api_Tlapaleria.Services
                             };
                             _context.InventoryMovements.Add(movimientoKardex);
                         }
-                    } // <--- AQUÍ TERMINA EL CICLO FOREACH
+                    }
+                }
 
-
-                    // A. Sumamos cuántas piezas en total se compraron originalmente en ese ticket
-                    decimal totalPiezasCompradas = await _context.SaleDetails
+                // A. Sumamos cuántas piezas en total se compraron originalmente en ese ticket
+                decimal totalPiezasCompradas = await _context.SaleDetails
                     .Where(sd => sd.SaleId == dto.SaleId)
                     .SumAsync(sd => sd.Quantity);
 
@@ -153,7 +152,7 @@ namespace Api_Tlapaleria.Services
                     .Where(rd => _context.SaleDetails.Any(sd => sd.Id == rd.SaleDetailId && sd.SaleId == dto.SaleId))
                     .SumAsync(rd => rd.QuantityReturned);
 
-                // C. Sumamos las piezas que se están devolviendo AHIRITA en esta llamada
+                // C. Sumamos las piezas que se están devolviendo AHORITA en esta llamada
                 decimal totalPiezasDevueltasHoy = devolucion.Details.Sum(d => d.QuantityReturned);
 
                 // D. Computamos el gran total devuelto
@@ -166,22 +165,18 @@ namespace Api_Tlapaleria.Services
                     _context.Sales.Update(ticketOriginal);
                 }
 
-                // 5. GUARDAMOS TODO EL HISTORIAL (LEDGER) EN BASE DE DATOS
+                // AQUÍ ESTABA EL ERROR: Estas líneas también se perdieron
                 _context.Returns.Add(devolucion);
                 await _context.SaveChangesAsync();
-
-                // Confirmamos la transacción
                 await transaction.CommitAsync();
 
-                // Cargamos relaciones para la respuesta JSON limpia
                 await _context.Entry(devolucion).Reference(d => d.User).LoadAsync();
                 await _context.Entry(devolucion).Reference(d => d.Sale).LoadAsync();
 
-                return devolucion;
+                return devolucion; // <-- El return faltante
             }
             catch (Exception)
             {
-                // Si algo falló arriba, no se guarda nada de nada
                 await transaction.RollbackAsync();
                 throw;
             }

@@ -19,5 +19,7 @@ namespace Api_Tlapaleria.Services
         Task<bool> DeleteProductAsync(int id);
         //Reactivar un producto 
         Task<bool> ReactivateProductAsync(int id);
+        //Fecha de caducidad de los productos
+        Task<List<ExpiringProductDto>> GetExpiringProductsAsync();
     }
 }
