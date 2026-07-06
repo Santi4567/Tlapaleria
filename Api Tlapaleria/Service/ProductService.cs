@@ -55,6 +55,7 @@ namespace Api_Tlapaleria.Services
                     ProfitMargin = datos.ProfitMargin,
                     UnitOfMeasure = datos.UnitOfMeasure,
                     CurrentStock = datos.InitialStock,
+                    IsInventoryTracked = datos.IsInventoryTracked,
                     IsActive = true
                 };
 
@@ -203,6 +204,7 @@ namespace Api_Tlapaleria.Services
                 productoExistente.SupplierPrice = datos.SupplierPrice;
                 productoExistente.ProfitMargin = datos.ProfitMargin;
                 productoExistente.UnitOfMeasure = datos.UnitOfMeasure;
+                productoExistente.IsInventoryTracked = datos.IsInventoryTracked;
                 // El stock NO se toca aquí.
 
                 // --- MAGIA DE LOS HIJOS (Presentaciones) ---

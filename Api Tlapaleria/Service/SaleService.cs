@@ -49,23 +49,25 @@ namespace Api_Tlapaleria.Services
                         throw new Exception($"El producto base para la presentación '{presentacion.Name}' no está disponible.");
 
                     // 2. MATEMÁTICAS DE INVENTARIO
-                    // Si venden 2 Cajas y el factor es 100, vamos a restar 200 piezas del stock base.
                     decimal cantidadBaseARestar = item.Quantity * presentacion.StockFactor;
 
-                    if (presentacion.Product.CurrentStock < cantidadBaseARestar)
-                        throw new Exception($"Stock insuficiente. Quieres vender {item.Quantity} '{presentacion.Name}' (equivale a {cantidadBaseARestar} unidades base), pero solo hay {presentacion.Product.CurrentStock} en stock.");
+                    // LÓGICA HÍBRIDA: Solo validamos y restamos si el producto lleva rastreo
+                    if (presentacion.Product.IsInventoryTracked)
+                    {
+                        if (presentacion.Product.CurrentStock < cantidadBaseARestar)
+                            throw new Exception($"Stock insuficiente. Quieres vender {item.Quantity} '{presentacion.Name}' (equivale a {cantidadBaseARestar} unidades base), pero solo hay {presentacion.Product.CurrentStock} en stock.");
+                    }
 
                     // 3. ARMAMOS LA LIBRETA (Ticket)
                     var detalle = new SaleDetail
                     {
                         ProductId = presentacion.Product.Id,
                         PresentationId = presentacion.Id,
-                        // Combinamos ambos nombres para que el ticket sea súper claro
                         ProductName = $"{presentacion.Product.Name} - {presentacion.Name}",
                         Brand = presentacion.Product.Brand,
-                        Quantity = item.Quantity, // Ej: 2 (Cajas)
-                        StockFactorApplied = presentacion.StockFactor, // Ej: 100
-                        UnitPrice = presentacion.Price, // El precio de la presentación
+                        Quantity = item.Quantity,
+                        StockFactorApplied = presentacion.StockFactor,
+                        UnitPrice = presentacion.Price,
                         Subtotal = item.Quantity * presentacion.Price
                     };
 
@@ -73,25 +75,27 @@ namespace Api_Tlapaleria.Services
                     venta.Details.Add(detalle);
 
                     // 4. ACTUALIZAMOS EL INVENTARIO BASE Y EL KARDEX
-                    decimal stockAnterior = presentacion.Product.CurrentStock;
-                    presentacion.Product.CurrentStock -= cantidadBaseARestar;
-
-                    var movimientoKardex = new InventoryMovement
+                    if (presentacion.Product.IsInventoryTracked)
                     {
-                        ProductId = presentacion.Product.Id,
-                        UserId = userId,
-                        MovementType = "Venta",
-                        Quantity = cantidadBaseARestar, // En el Kardex registramos las unidades base reales
-                        PreviousStock = stockAnterior,
-                        NewStock = presentacion.Product.CurrentStock,
-                        Notes = $"Ticket: {folio}. Se vendieron {item.Quantity} de la presentación '{presentacion.Name}'.",
-                        CreatedAt = DateTime.Now
-                    };
+                        decimal stockAnterior = presentacion.Product.CurrentStock;
+                        presentacion.Product.CurrentStock -= cantidadBaseARestar;
 
-                    _context.InventoryMovements.Add(movimientoKardex);
-                }
+                        var movimientoKardex = new InventoryMovement
+                        {
+                            ProductId = presentacion.Product.Id,
+                            UserId = userId,
+                            MovementType = "Venta",
+                            Quantity = cantidadBaseARestar,
+                            PreviousStock = stockAnterior,
+                            NewStock = presentacion.Product.CurrentStock,
+                            Notes = $"Ticket: {folio}. Se vendieron {item.Quantity} de la presentación '{presentacion.Name}'.",
+                            CreatedAt = DateTime.Now
+                        };
 
-                _context.Sales.Add(venta);
+                        _context.InventoryMovements.Add(movimientoKardex);
+                    }
+
+                    _context.Sales.Add(venta);
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
 

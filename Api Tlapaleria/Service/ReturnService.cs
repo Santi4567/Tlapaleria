@@ -119,29 +119,32 @@ namespace Api_Tlapaleria.Services
                     var productoBase = await _context.Products.FindAsync(renglonOriginal.ProductId);
                     if (productoBase != null)
                     {
-                        decimal cantidadBaseARegresar = item.QuantityReturned * renglonOriginal.StockFactorApplied;
-                        decimal stockAnterior = productoBase.CurrentStock;
-
-                        productoBase.CurrentStock += cantidadBaseARegresar;
-
-                        var movimientoKardex = new InventoryMovement
+                        // LÓGICA HÍBRIDA: Solo regresamos stock si el producto lleva rastreo
+                        if (productoBase.IsInventoryTracked)
                         {
-                            ProductId = productoBase.Id,
-                            UserId = userId,
-                            MovementType = "Devolución",
-                            Quantity = cantidadBaseARegresar,
-                            PreviousStock = stockAnterior,
-                            NewStock = productoBase.CurrentStock,
-                            Notes = $"Devolución {folioDevolucion} ligada al ticket original {ticketOriginal.Folio}.",
-                            CreatedAt = DateTime.Now
-                        };
-                        _context.InventoryMovements.Add(movimientoKardex);
-                    }
-                } // <--- AQUÍ TERMINA EL CICLO FOREACH
+                            decimal cantidadBaseARegresar = item.QuantityReturned * renglonOriginal.StockFactorApplied;
+                            decimal stockAnterior = productoBase.CurrentStock;
+
+                            productoBase.CurrentStock += cantidadBaseARegresar;
+
+                            var movimientoKardex = new InventoryMovement
+                            {
+                                ProductId = productoBase.Id,
+                                UserId = userId,
+                                MovementType = "Devolución",
+                                Quantity = cantidadBaseARegresar,
+                                PreviousStock = stockAnterior,
+                                NewStock = productoBase.CurrentStock,
+                                Notes = $"Devolución {folioDevolucion} ligada al ticket original {ticketOriginal.Folio}.",
+                                CreatedAt = DateTime.Now
+                            };
+                            _context.InventoryMovements.Add(movimientoKardex);
+                        }
+                    } // <--- AQUÍ TERMINA EL CICLO FOREACH
 
 
-                // A. Sumamos cuántas piezas en total se compraron originalmente en ese ticket
-                decimal totalPiezasCompradas = await _context.SaleDetails
+                    // A. Sumamos cuántas piezas en total se compraron originalmente en ese ticket
+                    decimal totalPiezasCompradas = await _context.SaleDetails
                     .Where(sd => sd.SaleId == dto.SaleId)
                     .SumAsync(sd => sd.Quantity);
 
