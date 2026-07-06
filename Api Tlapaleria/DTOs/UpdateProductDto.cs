@@ -43,6 +43,9 @@ namespace Api_Tlapaleria.DTOs
         [Required]
         public string UnitOfMeasure { get; set; }
 
+        [Required]
+        public bool IsInventoryTracked { get; set; }
+
         // Aquí NO actualizamos el CurrentStock. El stock solo debe modificarse 
         // a través de compras a proveedores o ventas, no editando el producto.
 

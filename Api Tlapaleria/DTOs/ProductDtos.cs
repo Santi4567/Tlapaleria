@@ -46,6 +46,8 @@ namespace Api_Tlapaleria.DTOs
         [Required]
         public string UnitOfMeasure { get; set; } // "KG"
 
+        public bool IsInventoryTracked { get; set; } = true; // Por defecto lo rastrea
+
         public decimal InitialStock { get; set; } // Stock inicial al crearlo (ej: 50)
 
         // --- LA LISTA DE HIJOS ---
