@@ -50,6 +50,9 @@ namespace Api_Tlapaleria.DTOs
 
         public decimal InitialStock { get; set; } // Stock inicial al crearlo (ej: 50)
 
+        public bool HasExpiration { get; set; } = false;
+        public DateTime? NextExpirationDate { get; set; }
+
         // --- LA LISTA DE HIJOS ---
         // Aquí es donde recibes todas las variantes de golpe
         [Required]

@@ -46,6 +46,9 @@ namespace Api_Tlapaleria.DTOs
         [Required]
         public bool IsInventoryTracked { get; set; }
 
+        public bool HasExpiration { get; set; } = false;
+        public DateTime? NextExpirationDate { get; set; }
+
         // Aquí NO actualizamos el CurrentStock. El stock solo debe modificarse 
         // a través de compras a proveedores o ventas, no editando el producto.
 

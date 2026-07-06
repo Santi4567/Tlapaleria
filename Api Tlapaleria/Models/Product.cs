@@ -53,6 +53,9 @@ namespace Api_Tlapaleria.Models
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public DateTime UpdatedAt { get; set; } = DateTime.Now;
         // Inventario Hibrido 
-        public bool IsInventoryTracked { get; set; } = true; 
+        public bool IsInventoryTracked { get; set; } = true;
+
+        public bool HasExpiration { get; set; } = false;
+        public DateTime? NextExpirationDate { get; set; }
     }
 }
