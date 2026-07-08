@@ -30,7 +30,10 @@ namespace Api_Tlapaleria.Controllers
             var cookieOptions = new CookieOptions
             {
                 HttpOnly = true,
-                Secure = true,
+                //Produccion 
+                //Secure = true,
+                // Desarollo
+                Secure = false,
                 SameSite = SameSiteMode.Strict,
                 Expires = DateTime.Now.AddMinutes(60)
             };

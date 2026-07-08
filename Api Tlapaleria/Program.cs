@@ -1,4 +1,4 @@
-using Api_Tlapaleria.Data;
+ï»¿using Api_Tlapaleria.Data;
 using Api_Tlapaleria.Services; // Necesario para AuthService
 using Microsoft.AspNetCore.Authentication.JwtBearer; // Necesario para JWT
 using Microsoft.EntityFrameworkCore;
@@ -15,12 +15,12 @@ Console.WriteLine(@"
  /_/   \_\|_)   (____)  \____/(____) \____/  
 ");
 Console.WriteLine("ejecutando...");
-Console.WriteLine("versión 1.0\n");
+Console.WriteLine("versiÃ³n 1.0\n");
 // -------------------------
 
 var builder = WebApplication.CreateBuilder(args);
 
-// 1. BASE DE DATOS (Esto ya lo tenías)
+// 1. BASE DE DATOS (Esto ya lo tenÃ­as)
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<TlapaleriaContext>(options =>
 {
@@ -34,8 +34,8 @@ builder.Services.AddControllers().AddJsonOptions(x =>
     x.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
 });
 
-// 2. INYECCIÓN DE DEPENDENCIAS 
-// Aquí registramos los servicios
+// 2. INYECCIÃ“N DE DEPENDENCIAS 
+// AquÃ­ registramos los servicios
 builder.Services.AddScoped<AuthService>();
 
 //Servicio de Usuarios
@@ -63,7 +63,7 @@ builder.Services.AddScoped<IReturnService, ReturnService>();
 builder.Services.AddScoped<Api_Tlapaleria.Services.PermissionService>();
 
 
-//CONFIGURACIÓN DE JWT Y COOKIES
+//CONFIGURACIÃ“N DE JWT Y COOKIES
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
@@ -107,23 +107,23 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
                 // Buscamos al usuario: Su estado y su rol actual
                 var user = await dbContext.Users
                     .AsNoTracking()
-                    .Include(u => u.Rol) // Importante cargar la relación
+                    .Include(u => u.Rol) // Importante cargar la relaciÃ³n
                     .Where(u => u.Id == userId)
-                    .Select(u => new { u.IsActive, NombreRol = u.Rol.Nombre }) // Seleccionamos el nombre explícitamente
+                    .Select(u => new { u.IsActive, NombreRol = u.Rol.Nombre }) // Seleccionamos el nombre explÃ­citamente
                     .FirstOrDefaultAsync();
 
-                // Validación A: ¿Existe y está activo?
+                // ValidaciÃ³n A: Â¿Existe y estÃ¡ activo?
                 if (user == null || !user.IsActive)
                 {
                     context.Fail("Tu cuenta ha sido desactivada.");
                     return;
                 }
 
-                // Validación B: ¿El rol coincide?
+                // ValidaciÃ³n B: Â¿El rol coincide?
                 // Comparamos el rol del token contra el nombre que viene de la BD
                 if (user.NombreRol != tokenRole)
                 {
-                    context.Fail("Roles inconsistentes, vuelve a iniciar sesión");
+                    context.Fail("Roles inconsistentes, vuelve a iniciar sesiÃ³n");
                     return;
                 }
             },
@@ -131,14 +131,14 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             // 3.RESPUESTA DE ERROR (Para que salga success: false en JSON)
             OnChallenge = context =>
             {
-                // Esto evita el comportamiento por defecto (que solo manda un 401 vacío)
+                // Esto evita el comportamiento por defecto (que solo manda un 401 vacÃ­o)
                 context.HandleResponse();
 
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 context.Response.ContentType = "application/json";
 
-                // Usamos nuestra clase estándar para responder el error
-                var mensajeError = context.AuthenticateFailure?.Message ?? "No estás autorizado";
+                // Usamos nuestra clase estÃ¡ndar para responder el error
+                var mensajeError = context.AuthenticateFailure?.Message ?? "No estÃ¡s autorizado";
 
                 // Creamos el JSON manualmente porque estamos a bajo nivel en el middleware
                 var jsonResponse = System.Text.Json.JsonSerializer.Serialize(new
@@ -168,7 +168,7 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 
 // 4. ACTIVAR LA SEGURIDAD
-// El orden importa: Primero Authenticate (¿Quién eres?) luego Authorize (¿Tienes permiso?)
+// El orden importa: Primero Authenticate (Â¿QuiÃ©n eres?) luego Authorize (Â¿Tienes permiso?)
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -190,10 +190,17 @@ app.Lifetime.ApplicationStarted.Register(() =>
     Console.ResetColor();
 
     Console.WriteLine("Running...");
-    Console.WriteLine("version 1.0");
+    Console.WriteLine("version 1.0\n");
+
+    // --- LEEMOS Y MOSTRAMOS LOS PUERTOS ACTIVOS ---
+    Console.ForegroundColor = ConsoleColor.Yellow;
+    foreach (var url in app.Urls)
+    {
+        Console.WriteLine($"[+] Escuchando en: {url}");
+    }
 
     Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine("s4lm0.exe\n");
+    Console.WriteLine("\ns4lm0.exe\n");
     Console.ResetColor();
 });
 
