@@ -38,6 +38,18 @@ internal class Program
             x.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
         });
 
+        //CORS 
+        builder.Services.AddCors(options =>
+        {
+            options.AddPolicy("PoliticaFrontend", policy =>
+            {
+                policy.SetIsOriginAllowed(origin => true) // <-- ¡LA MAGIA! Acepta literalmente cualquier IP o URL
+                      .AllowAnyHeader()
+                      .AllowAnyMethod()
+                      .AllowCredentials(); // Mantiene la seguridad de tus cookies intacta
+            });
+        });
+
         // 2. INYECCIÓN DE DEPENDENCIAS 
         // Aquí registramos los servicios
         builder.Services.AddScoped<AuthService>();
@@ -170,6 +182,9 @@ internal class Program
         }
 
         app.UseHttpsRedirection();
+
+        // --- CORS ---
+        app.UseCors("PoliticaFrontend");
 
         // 4. ACTIVAR LA SEGURIDAD
         // El orden importa: Primero Authenticate (¿Quién eres?) luego Authorize (¿Tienes permiso?)
