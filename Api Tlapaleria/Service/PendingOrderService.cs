@@ -14,6 +14,7 @@ namespace Api_Tlapaleria.Services
             _context = context;
         }
 
+        //POST: Crea un nuevo registro en la tabla de Pendientes
         public async Task<PendingOrder> CreatePendingOrderAsync(CreatePendingOrderDto datos, int userId) // Recibimos el userId aquí
         {
             //Validamos que el producto no exista dentro de la tabal de pedidos para evitar duplicados 
@@ -144,6 +145,11 @@ namespace Api_Tlapaleria.Services
         //Buscador por nombre,codigo, codigo de barras con estado 
         public async Task<PagedResponse<PendingOrder>> SearchPendingOrdersAsync(string searchTerm, string status = "Todos", int pageNumber = 1, int pageSize = 50)
         {
+            // --- 0. SEGURIDAD Y LÍMITES ESTRICTOS ---
+            if (pageNumber < 1) pageNumber = 1;
+            if (pageSize < 1) pageSize = 10;
+            if (pageSize > 50) pageSize = 50; // <-- LÍMITE BLINDADO: Nadie podrá pedir más de 50 pedidos por página (o cámbialo a 10 si prefieres menos)
+
             // Si no hay texto, regresamos una respuesta paginada vacía
             if (string.IsNullOrWhiteSpace(searchTerm))
                 return new PagedResponse<PendingOrder>
@@ -167,8 +173,9 @@ namespace Api_Tlapaleria.Services
             if (!estadosValidos.Contains(status))
                 throw new Exception($"El filtro de estado '{status}' no es válido. Usa: {string.Join(", ", estadosValidos)}.");
 
-            // 2. Armamos la consulta base con la búsqueda de texto
+            // 2. Armamos la consulta base con la búsqueda de texto y optimización
             var query = _context.PendingOrders
+                .AsNoTracking() // <-- OPTIMIZACIÓN EXTRA: Evita saturar la memoria RAM vigilando cambios en tablas relacionadas
                 .Include(po => po.Product)
                 .Include(po => po.Supplier)
                 .Include(po => po.User)
@@ -185,14 +192,14 @@ namespace Api_Tlapaleria.Services
                 query = query.Where(po => po.Status == status);
             }
 
-            // --- 4. LA NUEVA MAGIA: Paginación en la búsqueda ---
+            // --- 4. PAGINACIÓN CON LÍMITE CONTROLADO ---
             var totalItems = await query.CountAsync();
             var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
 
             var resultados = await query
                 .OrderByDescending(po => po.CreatedAt) // Los más recientes primero
                 .Skip((pageNumber - 1) * pageSize)     // Nos saltamos las páginas anteriores
-                .Take(pageSize)                        // Tomamos solo los de esta página
+                .Take(pageSize)                        // Tomamos solo el límite permitido por esta página (máximo 50)
                 .ToListAsync();
 
             return new PagedResponse<PendingOrder>
@@ -203,7 +210,6 @@ namespace Api_Tlapaleria.Services
                 CurrentPage = pageNumber
             };
         }
-
         //Actualizacion de Datos
         public async Task<PendingOrder> UpdatePendingOrderAsync(int id, UpdatePendingOrderDto datos, int userId)
         {
