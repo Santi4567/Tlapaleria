@@ -18,15 +18,26 @@ namespace Api_Tlapaleria.Services
         Task<bool> ChangePasswordAsync(int userId, ChangePasswordDto datos);
 
         // Método para que un admin resetee la passwd de un usuario
-        Task<bool> ResetPasswordByAdminAsync(int targetUserId, string newPassword);
+        Task<bool> ResetPasswordByAdminAsync(
+            int targetUserId, 
+            string newPassword);
 
-        // 1. Traer todos
-        Task<List<UserDto>> GetAllUsersAsync(int requestorId);
+        //Traer todos los registros de la tabla Users
+        Task<PagedResponse<UserDto>> GetAllUsersAsync(
+            int requestorId,
+            bool isActive = true,
+            int? rolId = null,
+            int pageNumber = 1,
+            int pageSize = 10);
 
-        // 2. Buscar por coincidencia (Nombre O Username)
-        Task<List<UserDto>> SearchUsersAsync(string termino, int requestorId);
+        // Buscar por coincidencia (Nombre O Username)
+        Task<List<UserDto>> SearchUsersAsync(
+            string termino, 
+            int requestorId);
 
         //Eliminar 
-        Task<bool> DeleteUserAsync(int targetUserId, int requestorId);
+        Task<bool> DeleteUserAsync(
+            int targetUserId, 
+            int requestorId);
     }
 }

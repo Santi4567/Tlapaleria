@@ -225,9 +225,19 @@ namespace Api_Tlapaleria.Services
             return true;
         }
 
-        //Traer tpdos los usuarios 
-        public async Task<List<UserDto>> GetAllUsersAsync(int requestorId)
+        //GET: Traer todos los usuarios paginados y filtrados
+        public async Task<PagedResponse<UserDto>> GetAllUsersAsync(
+            int requestorId,
+            bool isActive = true,
+            int? rolId = null,
+            int pageNumber = 1,
+            int pageSize = 10)
         {
+            // 0. Seguridad básica en la paginación
+            if (pageNumber < 1) pageNumber = 1;
+            if (pageSize < 1) pageSize = 10;
+            if (pageSize > 100) pageSize = 100;
+
             // 1. AVERIGUAR QUIÉN PIDE LA LISTA
             var requestor = await _context.Users
                 .AsNoTracking()
@@ -236,22 +246,36 @@ namespace Api_Tlapaleria.Services
 
             if (requestor == null) throw new Exception("Usuario solicitante no válido.");
 
-            // 2. PREPARAR LA CONSULTA BASE
+            // 2. PREPARAR LA CONSULTA BASE FILTRANDO POR ESTADO (IsActive)
+            // Por defecto es true (activos). Si mandan false, buscará inactivos.
             var query = _context.Users
                 .AsNoTracking()
                 .Include(u => u.Rol)
-                .AsQueryable(); // Importante: AsQueryable permite agregar filtros paso a paso
+                .Where(u => u.IsActive == isActive)
+                .AsQueryable();
 
-            // 3. APLICAR FILTRO DE VISIBILIDAD
-            // Si el que pide la lista NO ES ADMIN...
+            // 3. FILTRO DINÁMICO POR ROL
+            // Si el frontend envió un ID de rol válido (ej. rolId = 2 para Cajero), lo aplicamos
+            if (rolId.HasValue && rolId.Value > 0)
+            {
+                query = query.Where(u => u.RolId == rolId.Value);
+            }
+
+            // 4. APLICAR FILTRO DE VISIBILIDAD DE SEGURIDAD (Tu regla anti-espionaje)
+            // Si el que pide la lista NO ES ADMIN, ocultamos a los Admins de la lista
             if (requestor.Rol.Nombre != "Admin")
             {
-                // ... filtramos para que NO aparezcan los Admins en la lista
                 query = query.Where(u => u.Rol.Nombre != "Admin");
             }
 
-            // 4. EJECUTAR Y PROYECTAR (Select)
+            // 5. CONTAR EL TOTAL DE REGISTROS QUE COINCIDEN CON TODOS LOS FILTROS
+            var totalItems = await query.CountAsync();
+
+            // 6. EJECUTAR PAGINACIÓN EN MARIADB Y PROYECTAR AL DTO
             var usuarios = await query
+                .OrderBy(u => u.Name) // Orden constante para paginación precisa
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
                 .Select(u => new UserDto
                 {
                     Id = u.Id,
@@ -262,9 +286,19 @@ namespace Api_Tlapaleria.Services
                 })
                 .ToListAsync();
 
-            return usuarios;
+            // 7. EMPACAR EN TU DTO ESTÁNDAR
+            var totalPages = (int)Math.Ceiling((double)totalItems / pageSize);
+
+            return new PagedResponse<UserDto>
+            {
+                Data = usuarios,
+                TotalItems = totalItems,
+                TotalPages = totalPages,
+                CurrentPage = pageNumber
+            };
         }
 
+        // Buscar Usuarios con límite de 10 resultados
         public async Task<List<UserDto>> SearchUsersAsync(string termino, int requestorId)
         {
             if (string.IsNullOrWhiteSpace(termino)) return new List<UserDto>();
@@ -281,18 +315,18 @@ namespace Api_Tlapaleria.Services
             var query = _context.Users
                 .AsNoTracking()
                 .Include(u => u.Rol)
-                .Where(u => u.Name.Contains(termino) || u.Username.Contains(termino)) // Filtro por nombre
+                .Where(u => u.Name.Contains(termino) || u.Username.Contains(termino))
                 .AsQueryable();
 
-            // 3. APLICAR FILTRO DE VISIBILIDAD
-            // Si no es Admin, ocultamos a los Admins de los resultados de búsqueda
+            // 3. APLICAR FILTRO DE VISIBILIDAD DE SEGURIDAD
             if (requestor.Rol.Nombre != "Admin")
             {
                 query = query.Where(u => u.Rol.Nombre != "Admin");
             }
 
-            // 4. EJECUTAR
+            // 4. EJECUTAR CON LÍMITE DE 10
             var usuarios = await query
+                .Take(10) // <-- AQUÍ ESTÁ EL LÍMITE: Corta en la base de datos al llegar a 10
                 .Select(u => new UserDto
                 {
                     Id = u.Id,
@@ -306,7 +340,7 @@ namespace Api_Tlapaleria.Services
             return usuarios;
         }
 
-        //Eliminar usuarios 
+        //Desactivar usuarios 
         public async Task<bool> DeleteUserAsync(int targetUserId, int requestorId)
         {
             // 1. BUSCAR A LA VÍCTIMA (Target)

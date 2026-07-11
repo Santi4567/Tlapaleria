@@ -144,24 +144,26 @@ namespace Api_Tlapaleria.Controllers
             }
         }
 
-        // 1. OBTENER TODOS LOS USUARIOS
-        // ... imports ...
-
+        // 1. OBTENER TODOS LOS USUARIOS (Paginados y con filtros dinámicos)
         [HttpGet]
         [RequierePermiso("view.users")]
-        public async Task<ActionResult<ApiResponse<List<UserDto>>>> GetAll()
+        public async Task<ActionResult<ApiResponse<PagedResponse<UserDto>>>> GetAll(
+            [FromQuery] bool isActive = true,
+            [FromQuery] int? rolId = null,
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10)
         {
             try
             {
-                // 1. Obtener ID del solicitante
+                // 1. Obtener ID del solicitante desde el token
                 var idClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
                 if (idClaim == null) return Unauthorized(ApiResponse<object>.Error("Token inválido"));
                 int requestorId = int.Parse(idClaim.Value);
 
-                // 2. Llamar al servicio con el ID
-                var lista = await _userService.GetAllUsersAsync(requestorId);
+                // 2. Llamar al servicio pasándole todos los filtros
+                var resultado = await _userService.GetAllUsersAsync(requestorId, isActive, rolId, pageNumber, pageSize);
 
-                return Ok(ApiResponse<List<UserDto>>.Exito(lista));
+                return Ok(ApiResponse<PagedResponse<UserDto>>.Exito(resultado));
             }
             catch (Exception ex)
             {

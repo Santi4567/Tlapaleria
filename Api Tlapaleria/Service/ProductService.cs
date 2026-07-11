@@ -14,6 +14,7 @@ namespace Api_Tlapaleria.Services
             _context = context;
         }
 
+        //POST: Crear un nuevo registro en la tabla de Productos
         public async Task<Product> CreateProductAsync(CreateProductDto datos)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
@@ -114,7 +115,7 @@ namespace Api_Tlapaleria.Services
             var term = searchTerm.ToLower().Trim();
 
             var resultados = await _context.Products
-                .AsNoTracking() // <-- OPTIMIZACIÓN EXTRA: Evita que EF sobrecargue la memoria vigilando cambios
+                .AsNoTracking() // <-- OPTIMIZACIÓN : Evita que EF sobrecargue la memoria vigilando cambios
                 .Include(p => p.Presentations)
                 .Where(p => p.IsActive == isActive && (
                     // Busca en el PADRE
@@ -124,7 +125,7 @@ namespace Api_Tlapaleria.Services
                     // Busca en los HIJOS (Presentaciones)
                     p.Presentations.Any(pres => pres.Barcode == term || pres.Code == term)
                 ))
-                .Take(10) // <-- AQUÍ ESTÁ EL LÍMITE: Corta la consulta al llegar a 10 resultados (LIMIT 10 en SQL)
+                .Take(10) // <-- LÍMITE: Corta la consulta al llegar a 10 resultados (LIMIT 10 en SQL)
                 .ToListAsync();
 
             return resultados;
