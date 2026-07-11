@@ -19,13 +19,16 @@ namespace Api_Tlapaleria.Controllers
             _supplierService = supplierService;
         }
 
-        // 1. OBTENER TODOS
+        // 1. OBTENER TODOS (Por defecto activos: /api/suppliers | Inactivos: /api/suppliers?isActive=false)
         [HttpGet]
         [RequierePermiso("view.suppliers")]
-        public async Task<ActionResult<ApiResponse<List<Supplier>>>> GetAll()
+        public async Task<ActionResult<ApiResponse<PagedResponse<Supplier>>>> GetAll(
+            [FromQuery] bool isActive = true,
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10)
         {
-            var lista = await _supplierService.GetAllAsync();
-            return Ok(ApiResponse<List<Supplier>>.Exito(lista));
+            var resultado = await _supplierService.GetAllAsync(isActive, pageNumber, pageSize);
+            return Ok(ApiResponse<PagedResponse<Supplier>>.Exito(resultado));
         }
 
         // 2. BUSCAR POR NOMBRE

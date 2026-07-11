@@ -14,6 +14,7 @@ namespace Api_Tlapaleria.Services
             _context = context;
         }
 
+        //GET: Obtener todo la¿os reembolsos usando paginacion
         public async Task<PagedResponse<SaleReturn>> GetReturnsAsync(string? search = null, int pageNumber = 1, int pageSize = 50)
         {
             // Empezamos la consulta base uniendo las tablas necesarias (pero SIN los detalles para no saturar)

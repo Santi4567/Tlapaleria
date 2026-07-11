@@ -21,7 +21,7 @@ namespace Api_Tlapaleria.Controllers
 
         //Crear Nuevo Usuario 
         [HttpPost("create")]
-        [RequierePermiso("add.users")] // Un Gerente puede entrar aquí...
+        [RequierePermiso("add.users")] // Permiso necesario 
         public async Task<ActionResult<ApiResponse<User>>> CreateUser([FromBody] RegisterUserDto datos)
         {
             try

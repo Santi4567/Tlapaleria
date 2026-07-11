@@ -14,6 +14,7 @@ namespace Api_Tlapaleria.Services
             _context = context;
         }
 
+        //POST: Crear una nueva venta 
         public async Task<Sale> CreateSaleAsync(CreateSaleDto saleDto, int userId)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
@@ -146,12 +147,12 @@ namespace Api_Tlapaleria.Services
                 CurrentPage = pageNumber
             };
         }
-
+        //GET: Buscar una venta por ID 
         public async Task<Sale?> GetSaleByIdAsync(int saleId)
         {
             var ticket = await _context.Sales
                 .Include(s => s.User) // Traemos los datos del cajero 
-                .Include(s => s.Details) // ¡MAGIA! Traemos todos los productos de esta venta
+                .Include(s => s.Details) // Traemos todos los productos de esta venta
                 .FirstOrDefaultAsync(s => s.Id == saleId);
 
             return ticket;

@@ -14,15 +14,42 @@ namespace Api_Tlapaleria.Services
             _context = context;
         }
 
-        public async Task<List<Supplier>> GetAllAsync()
+        // GET: Mostrar proveedores paginados 
+        public async Task<PagedResponse<Supplier>> GetAllAsync(bool isActive = true, int pageNumber = 1, int pageSize = 10)
         {
-            // Solo mostramos los activos por defecto
-            return await _context.Suppliers
+            // 1. Seguridad básica en los parámetros
+            if (pageNumber < 1) pageNumber = 1;
+            if (pageSize < 1) pageSize = 10;
+            if (pageSize > 100) pageSize = 100;
+
+            // 2. Armamos la consulta base
+            var query = _context.Suppliers
                 .AsNoTracking()
-                .Where(s => s.IsActive)
+                .Where(s => s.IsActive == isActive);
+
+            // 3. Contamos cuántos proveedores hay en total en la BD
+            var totalItems = await query.CountAsync();
+
+            // 4. Traemos solo la "rebanada" de la página actual (LIMIT y OFFSET en MariaDB)
+            var items = await query
+                .OrderBy(s => s.Name)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
+
+            // 5. Calculamos el total de páginas y llenamos TU objeto DTO
+            var totalPages = (int)Math.Ceiling((double)totalItems / pageSize);
+
+            return new PagedResponse<Supplier>
+            {
+                Data = items,             // Tu lista de proveedores de esta página
+                TotalItems = totalItems,  // Total en la base de datos
+                TotalPages = totalPages,  // Total de páginas calculadas
+                CurrentPage = pageNumber  // Página en la que estamos
+            };
         }
 
+        //GET: Traer a un proveedor por ID 
         public async Task<Supplier> GetByIdAsync(int id)
         {
             var supplier = await _context.Suppliers.FindAsync(id);
@@ -30,7 +57,7 @@ namespace Api_Tlapaleria.Services
             return supplier;
         }
 
-        // --- BÚSQUEDA POR NOMBRE ---
+        // GET: BÚSQUEDA POR NOMBRE ---
         public async Task<List<Supplier>> SearchAsync(string termino)
         {
             if (string.IsNullOrWhiteSpace(termino)) return new List<Supplier>();
@@ -38,10 +65,11 @@ namespace Api_Tlapaleria.Services
             return await _context.Suppliers
                 .AsNoTracking()
                 .Where(s => s.IsActive && s.Name.Contains(termino)) // Busca coincidencias parciales
+                .Take(10) // <-- LÍMITE: Restringe el resultado a máximo 10 proveedores
                 .ToListAsync();
         }
 
-        // --- CREAR (CON VALIDACIÓN DE DUPLICADOS) ---
+        //POST: CREAR un nuevo proveedor  
         public async Task<Supplier> CreateAsync(CreateSupplierDto datos)
         {
             // Validar si ya existe una empresa con ese nombre EXACTO
@@ -67,7 +95,8 @@ namespace Api_Tlapaleria.Services
             return nuevo;
         }
 
-        // --- EDITAR (TAMBIÉN VALIDA DUPLICADOS) ---
+        // Post: EDITAR un proveedor 
+        //Verifica que no existan duplicados 
         public async Task<Supplier> UpdateAsync(int id, UpdateSupplierDto datos)
         {
             var supplier = await _context.Suppliers.FindAsync(id);
@@ -93,7 +122,9 @@ namespace Api_Tlapaleria.Services
 
             return supplier;
         }
-
+        
+        //DELETE: Desactiva provedores 
+        //No se puede eliminar por integridad de la tabla Finanzas 
         public async Task<bool> DeleteAsync(int id)
         {
             var supplier = await _context.Suppliers.FindAsync(id);
