@@ -171,20 +171,27 @@ namespace Api_Tlapaleria.Controllers
             }
         }
 
-        //Buscar Usuarios
+        // 2. BUSCAR USUARIOS POR TÉRMINO, ESTADO Y ROL OPCIONAL
+        // Ejemplo Normal (Activos): /api/users/search/carlos
+        // Ejemplo Inactivos: /api/users/search/carlos?isActive=false
+        // Ejemplo Cajeros Activos: /api/users/search/carlos?rolId=2
+        // Ejemplo Combo completo: /api/users/search/carlos?isActive=false&rolId=2
         [HttpGet("search/{termino}")]
         [RequierePermiso("view.users")]
-        public async Task<ActionResult<ApiResponse<List<UserDto>>>> Search(string termino)
+        public async Task<ActionResult<ApiResponse<List<UserDto>>>> Search(
+            string termino,
+            [FromQuery] bool isActive = true,
+            [FromQuery] int? rolId = null)
         {
             try
             {
-                // 1. Obtener ID del solicitante
+                // 1. Obtener ID del solicitante desde el token
                 var idClaim = User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier);
                 if (idClaim == null) return Unauthorized(ApiResponse<object>.Error("Token inválido"));
                 int requestorId = int.Parse(idClaim.Value);
 
-                // 2. Llamar al servicio con el ID
-                var resultados = await _userService.SearchUsersAsync(termino, requestorId);
+                // 2. Llamar al servicio pasándole todos los filtros
+                var resultados = await _userService.SearchUsersAsync(termino, requestorId, isActive, rolId);
 
                 return Ok(ApiResponse<List<UserDto>>.Exito(resultados));
             }

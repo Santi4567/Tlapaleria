@@ -10,7 +10,7 @@ namespace Api_Tlapaleria.Services
         //Muestra Informacion del Proveedor por ID
         Task<Supplier> GetByIdAsync(int id);
         //Buscador dinamico por coincidencias 
-        Task<List<Supplier>> SearchAsync(string termino); 
+        Task<List<Supplier>> SearchAsync(string termino, bool isActive = true);
         //Crea un nuevo registro en la Tabal de Proveedores
         Task<Supplier> CreateAsync(CreateSupplierDto datos);
         //Actualiza un proveedor 

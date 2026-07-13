@@ -338,6 +338,54 @@ namespace Api_Tlapaleria.Services
                 .ToListAsync();
 
             return usuarios;
+        }// Buscar Usuarios con filtros dinámicos y límite de 10 resultados
+        public async Task<List<UserDto>> SearchUsersAsync(string termino, int requestorId, bool isActive = true, int? rolId = null)
+        {
+            if (string.IsNullOrWhiteSpace(termino)) return new List<UserDto>();
+
+            // 1. AVERIGUAR QUIÉN BUSCA
+            var requestor = await _context.Users
+                .AsNoTracking()
+                .Include(u => u.Rol)
+                .FirstOrDefaultAsync(u => u.Id == requestorId);
+
+            if (requestor == null) throw new Exception("Usuario solicitante no válido.");
+
+            // 2. PREPARAR CONSULTA BASE CON EL TÉRMINO DE BÚSQUEDA Y ESTADO (IsActive)
+            var query = _context.Users
+                .AsNoTracking()
+                .Include(u => u.Rol)
+                .Where(u => u.IsActive == isActive &&
+                           (u.Name.Contains(termino) || u.Username.Contains(termino)))
+                .AsQueryable();
+
+            // 3. FILTRO DINÁMICO POR ROL (Opcional)
+            // Solo se aplica si el frontend envió un ID numérico mayor a 0
+            if (rolId.HasValue && rolId.Value > 0)
+            {
+                query = query.Where(u => u.RolId == rolId.Value);
+            }
+
+            // 4. APLICAR FILTRO DE VISIBILIDAD DE SEGURIDAD
+            if (requestor.Rol.Nombre != "Admin")
+            {
+                query = query.Where(u => u.Rol.Nombre != "Admin");
+            }
+
+            // 5. EJECUTAR CON LÍMITE DE 10
+            var usuarios = await query
+                .Take(10) // <-- LÍMITE BLINDADO: Máximo 10 coincidencias en BD
+                .Select(u => new UserDto
+                {
+                    Id = u.Id,
+                    Name = u.Name,
+                    Username = u.Username,
+                    Rol = u.Rol.Nombre,
+                    IsActive = u.IsActive
+                })
+                .ToListAsync();
+
+            return usuarios;
         }
 
         //Desactivar usuarios 

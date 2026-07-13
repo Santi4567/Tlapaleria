@@ -57,15 +57,15 @@ namespace Api_Tlapaleria.Services
             return supplier;
         }
 
-        // GET: BÚSQUEDA POR NOMBRE ---
-        public async Task<List<Supplier>> SearchAsync(string termino)
+        // GET: BÚSQUEDA POR NOMBRE CON FILTRO DE ESTADO
+        public async Task<List<Supplier>> SearchAsync(string termino, bool isActive = true)
         {
             if (string.IsNullOrWhiteSpace(termino)) return new List<Supplier>();
 
             return await _context.Suppliers
                 .AsNoTracking()
-                .Where(s => s.IsActive && s.Name.Contains(termino)) // Busca coincidencias parciales
-                .Take(10) // <-- LÍMITE: Restringe el resultado a máximo 10 proveedores
+                .Where(s => s.IsActive == isActive && s.Name.Contains(termino)) // <-- Ahora busca en activos O inactivos
+                .Take(10) // Límite de seguridad intocable
                 .ToListAsync();
         }
 

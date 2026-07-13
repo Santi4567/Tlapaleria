@@ -31,9 +31,8 @@ namespace Api_Tlapaleria.Services
             int pageSize = 10);
 
         // Buscar por coincidencia (Nombre O Username)
-        Task<List<UserDto>> SearchUsersAsync(
-            string termino, 
-            int requestorId);
+        // 2. Buscar por coincidencia con filtros dinámicos (Estado + Rol opcional)
+        Task<List<UserDto>> SearchUsersAsync(string termino, int requestorId, bool isActive = true, int? rolId = null);
 
         //Eliminar 
         Task<bool> DeleteUserAsync(

@@ -31,12 +31,14 @@ namespace Api_Tlapaleria.Controllers
             return Ok(ApiResponse<PagedResponse<Supplier>>.Exito(resultado));
         }
 
-        // 2. BUSCAR POR NOMBRE
+        // 2. BUSCAR POR NOMBRE Y ESTADO
+        // Ejemplo Activos: /api/suppliers/search/truper
+        // Ejemplo Inactivos: /api/suppliers/search/truper?isActive=false
         [HttpGet("search/{termino}")]
         [RequierePermiso("view.suppliers")]
-        public async Task<ActionResult<ApiResponse<List<Supplier>>>> Search(string termino)
+        public async Task<ActionResult<ApiResponse<List<Supplier>>>> Search(string termino, [FromQuery] bool isActive = true)
         {
-            var resultados = await _supplierService.SearchAsync(termino);
+            var resultados = await _supplierService.SearchAsync(termino, isActive);
             return Ok(ApiResponse<List<Supplier>>.Exito(resultados));
         }
 
@@ -72,7 +74,7 @@ namespace Api_Tlapaleria.Controllers
             }
         }
 
-        // 5. ELIMINAR
+        // 5. Desactivar
         [HttpDelete("{id}")]
         [RequierePermiso("delete.suppliers")]
         public async Task<ActionResult<ApiResponse<object>>> Delete(int id)
