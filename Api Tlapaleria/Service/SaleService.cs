@@ -2,6 +2,9 @@
 using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.RateLimiting;
+using System.Threading.RateLimiting;
+using System.Security.Claims;
 
 namespace Api_Tlapaleria.Services
 {
@@ -29,6 +32,7 @@ namespace Api_Tlapaleria.Services
                 {
                     Folio = folio,
                     PaymentMethod = saleDto.PaymentMethod,
+                    PaymentReference = saleDto.PaymentReference?.Trim(),
                     UserId = userId,
                     TotalAmount = 0,
                     IsActive = true,
@@ -94,6 +98,37 @@ namespace Api_Tlapaleria.Services
                         };
 
                         _context.InventoryMovements.Add(movimientoKardex);
+                    }
+                }
+
+                if (venta.PaymentMethod == "Tarjeta" || venta.PaymentMethod == "Transferencia")
+                {
+                    if (string.IsNullOrWhiteSpace(venta.PaymentReference))
+                    {
+                        throw new Exception($"Para pagos con {venta.PaymentMethod}, es obligatorio ingresar el número de autorización o referencia.");
+                    }
+                }
+                else if (venta.PaymentMethod == "Efectivo")
+                {
+                    if (!string.IsNullOrWhiteSpace(venta.PaymentReference))
+                    {
+                        // Validamos que sea un número válido y que alcance para pagar la cuenta
+                        if (decimal.TryParse(venta.PaymentReference, out decimal montoRecibido))
+                        {
+                            if (montoRecibido < venta.TotalAmount)
+                            {
+                                throw new Exception($"El monto recibido en efectivo (${montoRecibido:N2}) es menor al total de la venta (${venta.TotalAmount:N2}).");
+                            }
+                        }
+                        else
+                        {
+                            throw new Exception("La referencia para pago en efectivo debe ser un número válido (ej. 500 o 1000).");
+                        }
+                    }
+                    else
+                    {
+                        // Opcional: Si quieres que para efectivo sea obligatorio poner con cuánto pagaron, descomenta esto:
+                        throw new Exception("Debes indicar el monto en efectivo con el que pagó el cliente.");
                     }
                 }
 

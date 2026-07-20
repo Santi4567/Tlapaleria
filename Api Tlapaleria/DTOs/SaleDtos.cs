@@ -19,6 +19,9 @@ namespace Api_Tlapaleria.DTOs
         [RegularExpression("^(Efectivo|Tarjeta|Transferencia)$")]
         public string PaymentMethod { get; set; }
 
+        [MaxLength(100, ErrorMessage = "La referencia no puede exceder los 100 caracteres.")]
+        public string? PaymentReference { get; set; }
+
         [Required]
         [MinLength(1)]
         public List<CreateSaleDetailDto> Details { get; set; } = new List<CreateSaleDetailDto>();

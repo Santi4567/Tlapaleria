@@ -17,9 +17,14 @@ namespace Api_Tlapaleria.Models
         [Column(TypeName = "decimal(10,2)")]
         public decimal TotalAmount { get; set; }
 
+        // Archivo: Sale.cs
         [Required(ErrorMessage = "El método de pago es obligatorio.")]
         [MaxLength(50)]
         public string PaymentMethod { get; set; } = string.Empty;
+
+        // --- NUEVA COLUMNA ---
+        [MaxLength(100)]
+        public string? PaymentReference { get; set; } // Puede ser "500", "AUTH-048291", "SPEI-884920", etc.
 
         // Relación con el Cajero
         [Required]

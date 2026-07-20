@@ -3,8 +3,11 @@ using Api_Tlapaleria.Services; // Necesario para AuthService
 using Microsoft.AspNetCore.Authentication.JwtBearer; // Necesario para JWT
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens; // Necesario para validar el token
+using System.Security.Claims; // Necesario para el escudo de peticiones 
 using System.Text;
-using System.Text.Json.Serialization;
+using System.Text.Json.Serialization; 
+using System.Threading.RateLimiting; // Necesario para el escudo de peticiones 
+using Microsoft.AspNetCore.RateLimiting;  // Necesario para el escudo de peticiones 
 
 
 internal class Program
@@ -19,7 +22,7 @@ internal class Program
  /_/   \_\|_)   (____)  \____/(____) \____/  
 ");
         Console.WriteLine("ejecutando...");
-        Console.WriteLine("versión 1.0\n");
+        Console.WriteLine("versión 1.2\n");
         // -------------------------
 
         var builder = WebApplication.CreateBuilder(args);
@@ -168,6 +171,59 @@ internal class Program
                     }
                 };
             });
+
+        // --- ESCUDO: RATE LIMITER (BLINDAJE CONTRA ABUSOS Y DDoS) ---
+        builder.Services.AddRateLimiter(options =>
+        {
+            options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+
+            // Qué hacer cuando detectamos el abuso (La alerta)
+            options.OnRejected = async (context, token) =>
+            {
+                var httpContext = context.HttpContext;
+
+                // Extraemos al culpable (Su ID de usuario del token o su IP si es anónimo)
+                var ipInfractor = httpContext.Connection.RemoteIpAddress?.ToString() ?? "IP Desconocida";
+                var usuarioId = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                                ?? httpContext.User.FindFirst("id")?.Value
+                                ?? "Usuario Anónimo";
+
+                // Imprimimos la alerta roja en la consola / logs
+                var logger = httpContext.RequestServices.GetRequiredService<ILogger<Program>>();
+                logger.LogWarning("⚠️ ALERTA DE SEGURIDAD: El usuario '{UserId}' desde la IP [{IP}] excedió el límite de peticiones (Posible DoS).", usuarioId, ipInfractor);
+
+                // Respuesta JSON estandarizada con la estructura de tu API
+                httpContext.Response.ContentType = "application/json";
+                var jsonResponse = System.Text.Json.JsonSerializer.Serialize(new
+                {
+                    success = false,
+                    message = "Has excedido el límite de solicitudes permitidas. Por seguridad, espera un momento antes de reintentar.",
+                    data = (object)null
+                });
+
+                await httpContext.Response.WriteAsync(jsonResponse, cancellationToken: token);
+            };
+
+            // Regla matemática: Límite por Usuario Logueado o por IP
+            options.AddPolicy("ProteccionAbuso", httpContext =>
+            {
+                // Obtenemos una clave única para identificar quién hace la petición
+                var partitionKey = httpContext.User.FindFirst(ClaimTypes.NameIdentifier)?.Value
+                                   ?? httpContext.User.FindFirst("id")?.Value
+                                   ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                                   ?? "cliente_general";
+
+                return RateLimitPartition.GetFixedWindowLimiter(
+                    partitionKey: partitionKey,
+                    factory: partition => new FixedWindowRateLimiterOptions
+                    {
+                        AutoReplenishment = true,
+                        PermitLimit = 60, // Límite: 60 peticiones...
+                        Window = TimeSpan.FromMinutes(1) // ... por cada 1 minuto.
+                    });
+            });
+        });
+
         builder.Services.AddControllers();
         builder.Services.AddEndpointsApiExplorer();
         builder.Services.AddSwaggerGen();
@@ -183,8 +239,11 @@ internal class Program
 
         app.UseHttpsRedirection();
 
-        // --- CORS ---
+        // --- POLITICAS DE CORS ---
         app.UseCors("PoliticaFrontend");
+
+        // --- ACTIVAMOS EL ESCUDO LIMITADOR DE PETICIONES ---
+        app.UseRateLimiter();
 
         // 4. ACTIVAR LA SEGURIDAD
         // El orden importa: Primero Authenticate (¿Quién eres?) luego Authorize (¿Tienes permiso?)
@@ -209,7 +268,7 @@ internal class Program
             Console.ResetColor();
 
             Console.WriteLine("Running...");
-            Console.WriteLine("version 1.1\n");
+            Console.WriteLine("version 1.2\n");
 
             // --- LEEMOS Y MOSTRAMOS LOS PUERTOS ACTIVOS ---
             Console.ForegroundColor = ConsoleColor.Yellow;
