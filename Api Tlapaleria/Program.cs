@@ -1,13 +1,13 @@
 ﻿using Api_Tlapaleria.Data;
 using Api_Tlapaleria.Services; // Necesario para AuthService
 using Microsoft.AspNetCore.Authentication.JwtBearer; // Necesario para JWT
+using Microsoft.AspNetCore.RateLimiting;  // Necesario para el escudo de peticiones 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens; // Necesario para validar el token
 using System.Security.Claims; // Necesario para el escudo de peticiones 
 using System.Text;
 using System.Text.Json.Serialization; 
 using System.Threading.RateLimiting; // Necesario para el escudo de peticiones 
-using Microsoft.AspNetCore.RateLimiting;  // Necesario para el escudo de peticiones 
 
 
 internal class Program
@@ -22,7 +22,7 @@ internal class Program
  /_/   \_\|_)   (____)  \____/(____) \____/  
 ");
         Console.WriteLine("ejecutando...");
-        Console.WriteLine("versión 1.3\n");
+        Console.WriteLine("versión 1.4\n");
         // -------------------------
 
         var builder = WebApplication.CreateBuilder(args);
@@ -59,6 +59,9 @@ internal class Program
 
         //Servicio de Usuarios
         builder.Services.AddScoped<IUserService, UserService>();
+
+        //Servicio de roles 
+        builder.Services.AddScoped<IRoleService, RoleService>();
 
         //Servicio de suppliers
         builder.Services.AddScoped<ISupplierService, SupplierService>();
@@ -268,7 +271,7 @@ internal class Program
             Console.ResetColor();
 
             Console.WriteLine("Running...");
-            Console.WriteLine("version 1.3\n");
+            Console.WriteLine("version 1.4\n");
 
             // --- LEEMOS Y MOSTRAMOS LOS PUERTOS ACTIVOS ---
             Console.ForegroundColor = ConsoleColor.Yellow;

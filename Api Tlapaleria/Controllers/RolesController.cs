@@ -1,0 +1,196 @@
+﻿using Api_Tlapaleria.Attributes;
+using Api_Tlapaleria.DTOs;
+using Api_Tlapaleria.Models;
+using Api_Tlapaleria.Services; // Asegúrate de que coincida con tu namespace (Service o Services)
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+namespace Api_Tlapaleria.Controllers
+{
+    [Route("api/[controller]")]
+    [ApiController]
+    [Authorize] // Bloqueo general: Nadie entra a este controlador sin un Token JWT válido
+    public class RolesController : ControllerBase
+    {
+        private readonly IRoleService _roleService;
+
+        public RolesController(IRoleService roleService)
+        {
+            _roleService = roleService;
+        }
+
+        // 1. OBTENER TODOS LOS ROLES (Con sus listas de permisos)
+        // GET: /api/roles
+        [HttpGet]
+        [RequierePermiso("view.roles")]
+        public async Task<ActionResult<ApiResponse<List<RolDto>>>> GetAll()
+        {
+            var lista = await _roleService.GetAllRolesAsync();
+            return Ok(ApiResponse<List<RolDto>>.Exito(lista));
+        }
+
+        // 2. OBTENER EL CATÁLOGO DE PERMISOS (Para dibujar los checkboxes en el formulario de React)
+        // GET: /api/roles/permissions
+        [HttpGet("permissions")]
+        [RequierePermiso("view.roles")]
+        public async Task<ActionResult<ApiResponse<List<Permiso>>>> GetAllPermissions()
+        {
+            var lista = await _roleService.GetAllPermissionsAsync();
+            return Ok(ApiResponse<List<Permiso>>.Exito(lista));
+        }
+
+        // 3. BUSCAR ROLES POR TÉRMINO (Buscador dinámico)
+        // GET: /api/roles/search/cajero
+        [HttpGet("search/{termino}")]
+        [RequierePermiso("view.roles")]
+        public async Task<ActionResult<ApiResponse<List<RolDto>>>> Search(string termino)
+        {
+            try
+            {
+                var resultados = await _roleService.SearchRolesAsync(termino);
+                return Ok(ApiResponse<List<RolDto>>.Exito(resultados));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
+
+        // 4. OBTENER UN ROL POR ID
+        // GET: /api/roles/2
+        [HttpGet("{id}")]
+        [RequierePermiso("view.roles")]
+        public async Task<ActionResult<ApiResponse<RolDto>>> GetById(int id)
+        {
+            try
+            {
+                var rol = await _roleService.GetRoleByIdAsync(id);
+                return Ok(ApiResponse<RolDto>.Exito(rol));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
+
+        // 5. OBTENER USUARIOS POR ID DE ROL (PAGINADOS Y CON PROTECCIÓN DE RANGO)
+        // GET: /api/roles/2/users?pageNumber=1&pageSize=10
+        // Regla: Solo Admin o usuarios con el permiso "user.privilege_view"
+        [HttpGet("{id}/users")]
+        public async Task<ActionResult<ApiResponse<PagedResponse<UserDto>>>> GetUsersByRole(
+            int id,
+            [FromQuery] int pageNumber = 1,
+            [FromQuery] int pageSize = 10,
+            [FromServices] PermissionService permissionService = null!)
+        {
+            try
+            {
+                // 1. Obtenemos el rol de quien hace la petición desde el Token
+                var rolSolicitante = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value;
+
+                bool esAdmin = rolSolicitante == "Admin";
+                bool tienePermiso = await permissionService.UserHasPermissionAsync(rolSolicitante, "user.privilege_view");
+
+                // 2. Si no es Admin Y tampoco tiene el permiso, bloqueamos el paso
+                if (!esAdmin && !tienePermiso)
+                {
+                    return StatusCode(StatusCodes.Status403Forbidden,
+                        ApiResponse<object>.Error("Acceso denegado. Requieres ser Administrador o tener el permiso 'user.privilege_view' para ver el personal asignado a este rol."));
+                }
+
+                // 3. Ejecutamos la búsqueda paginada en el servicio
+                var resultado = await _roleService.GetUsersByRoleIdAsync(id, pageNumber, pageSize);
+                return Ok(ApiResponse<PagedResponse<UserDto>>.Exito(resultado));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
+
+        // 6. CREAR UN NUEVO ROL (Ligar checkboxes de permisos automáticamente)
+        // POST: /api/roles
+        [HttpPost]
+        [RequierePermiso("add.roles")]
+        public async Task<ActionResult<ApiResponse<RolDto>>> Create([FromBody] CreateEditRolDto datos)
+        {
+            try
+            {
+                var creado = await _roleService.CreateRoleAsync(datos);
+                return Ok(ApiResponse<RolDto>.Exito(creado, "Rol creado y permisos asignados exitosamente"));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
+
+        // 7. EDITAR NOMBRE DE UN ROL EXISTENTE
+        // PUT: /api/roles/2
+        [HttpPut("{id}")]
+        [RequierePermiso("edit.roles")]
+        public async Task<ActionResult<ApiResponse<RolDto>>> Update(int id, [FromBody] UpdateRolNameDto datos)
+        {
+            try
+            {
+                var actualizado = await _roleService.UpdateRoleAsync(id, datos);
+                return Ok(ApiResponse<RolDto>.Exito(actualizado, "Nombre del rol actualizado exitosamente"));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
+
+        // 8. ELIMINAR UN ROL (Con blindaje anti-huérfanos y protección de Admin)
+        // DELETE: /api/roles/2
+        [HttpDelete("{id}")]
+        [RequierePermiso("delete.roles")]
+        public async Task<ActionResult<ApiResponse<object>>> Delete(int id)
+        {
+            try
+            {
+                await _roleService.DeleteRoleAsync(id);
+                return Ok(ApiResponse<object>.Exito(null, "Rol eliminado correctamente del sistema"));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
+
+        // 9. ASIGNAR UN PERMISO ESPECÍFICO A UN ROL
+        // POST: /api/Roles/2/permissions/5
+        [HttpPost("{rolId}/permissions/{permisoId}")]
+        [RequierePermiso("edit.roles")]
+        public async Task<ActionResult<ApiResponse<RolDto>>> AssignPermission(int rolId, int permisoId)
+        {
+            try
+            {
+                var actualizado = await _roleService.AssignPermissionAsync(rolId, permisoId);
+                return Ok(ApiResponse<RolDto>.Exito(actualizado, "Permiso asignado correctamente al rol"));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
+
+        // 10. REMOVER UN PERMISO ESPECÍFICO DE UN ROL
+        // DELETE: /api/Roles/2/permissions/5
+        [HttpDelete("{rolId}/permissions/{permisoId}")]
+        [RequierePermiso("edit.roles")]
+        public async Task<ActionResult<ApiResponse<RolDto>>> RemovePermission(int rolId, int permisoId)
+        {
+            try
+            {
+                var actualizado = await _roleService.RemovePermissionAsync(rolId, permisoId);
+                return Ok(ApiResponse<RolDto>.Exito(actualizado, "Permiso removido correctamente del rol"));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
+    }
+}
