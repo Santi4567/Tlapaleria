@@ -151,5 +151,36 @@ namespace Api_Tlapaleria.Controllers
             var productos = await _productService.GetExpiringProductsAsync();
             return Ok(productos);
         }
+
+        // VERIFICAR CÓDIGO INTERNO REPETIDO
+        // Ejemplo desde React: /api/products/check-internal-code?code=TLAP-001
+        [HttpGet("check-internal-code")]
+        [RequierePermiso("view.products")] // O el permiso que consideres adecuado para validar formularios
+        public async Task<ActionResult<ApiResponse<object>>> CheckInternalCode([FromQuery] string code)
+        {
+            try
+            {
+                var nombreProducto = await _productService.CheckInternalCodeAsync(code);
+
+                // CASO A: No se encontró ninguna coincidencia (El código está libre)
+                if (nombreProducto == null)
+                {
+                    return Ok(ApiResponse<object>.Exito(
+                        new { existe = false, nombreProducto = (string?)null },
+                        "No se encontraron coincidencias"
+                    ));
+                }
+
+                // CASO B: Sí se encontró coincidencia (El código ya está en uso)
+                return Ok(ApiResponse<object>.Exito(
+                    new { existe = true, nombreProducto = nombreProducto },
+                    "El codigo interno ya esta usado "
+                ));
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(ApiResponse<object>.Error(ex.Message));
+            }
+        }
     }
 }

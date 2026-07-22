@@ -350,5 +350,23 @@ namespace Api_Tlapaleria.Services
 
             return productosEnRiesgo;
         }
+        // Verificar si un código interno ya está siendo utilizado
+        public async Task<string?> CheckInternalCodeAsync(string internalCode)
+        {
+            if (string.IsNullOrWhiteSpace(internalCode))
+                return null;
+
+            var term = internalCode.Trim().ToLower();
+
+            // 1. Buscamos solo en la columna InternalCode y seleccionamos ÚNICAMENTE el Nombre
+            // Esto se traduce en SQL como: SELECT Name FROM Products WHERE LOWER(InternalCode) = 'term' LIMIT 1;
+            var nombreProducto = await _context.Products
+                .AsNoTracking()
+                .Where(p => p.InternalCode.ToLower() == term)
+                .Select(p => p.Name)
+                .FirstOrDefaultAsync();
+
+            return nombreProducto;
+        }
     }
 }

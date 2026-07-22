@@ -8,20 +8,22 @@ namespace Api_Tlapaleria.Attributes
 {
     public class RequierePermisoAttribute : TypeFilterAttribute
     {
-        public RequierePermisoAttribute(string permiso) : base(typeof(RequierePermisoFilter))
+        // 1. Usamos 'params string[]' para poder recibir 1, 2 o más permisos por separado
+        public RequierePermisoAttribute(params string[] permisos) : base(typeof(RequierePermisoFilter))
         {
-            Arguments = new object[] { permiso };
+            Arguments = new object[] { permisos };
         }
     }
 
     public class RequierePermisoFilter : IAsyncAuthorizationFilter
     {
-        private readonly string _permisoRequerido;
+        // 2. Cambiamos la variable para que guarde un arreglo de strings
+        private readonly string[] _permisosRequeridos;
         private readonly PermissionService _permissionService;
 
-        public RequierePermisoFilter(string permisoRequerido, PermissionService permissionService)
+        public RequierePermisoFilter(string[] permisosRequeridos, PermissionService permissionService)
         {
-            _permisoRequerido = permisoRequerido;
+            _permisosRequeridos = permisosRequeridos;
             _permissionService = permissionService;
         }
 
@@ -34,15 +36,28 @@ namespace Api_Tlapaleria.Attributes
                 return;
             }
 
-            // Obtenemos el Rol del Token (que viene como nombre, ej: "Vendedor")
+            // Obtenemos el Rol del Token (ej: "Vendedor")
             var userRole = user.FindFirst(ClaimTypes.Role)?.Value;
 
-            // Consultamos a la BD si ese rol tiene el permiso
-            var tienePermiso = await _permissionService.UserHasPermissionAsync(userRole, _permisoRequerido);
+            // --- 3. AQUÍ ESTÁ LA MAGIA DEL "OR" ---
+            bool tieneAlMenosUnPermiso = false;
 
-            if (!tienePermiso)
+            // Iteramos por todos los permisos que mandaste en el controlador
+            foreach (var permiso in _permisosRequeridos)
             {
-                context.Result = new ObjectResult(ApiResponse<object>.Error($"No tienes permisos para: {_permisoRequerido}"))
+                // Con uno solo que regrese 'true' en la BD, rompemos el ciclo y le damos acceso
+                if (await _permissionService.UserHasPermissionAsync(userRole, permiso))
+                {
+                    tieneAlMenosUnPermiso = true;
+                    break;
+                }
+            }
+
+            // Si después de revisar todos los permisos ninguno fue válido, bloqueamos el paso
+            if (!tieneAlMenosUnPermiso)
+            {
+                var listaPermisos = string.Join(" o ", _permisosRequeridos);
+                context.Result = new ObjectResult(ApiResponse<object>.Error($"No tienes permisos suficientes. Requieres: {listaPermisos}"))
                 {
                     StatusCode = StatusCodes.Status403Forbidden
                 };

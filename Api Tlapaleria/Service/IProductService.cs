@@ -21,5 +21,8 @@ namespace Api_Tlapaleria.Services
         Task<bool> ReactivateProductAsync(int id);
         //Fecha de caducidad de los productos
         Task<List<ExpiringProductDto>> GetExpiringProductsAsync();
+
+        //Buscador de Codigo Interno(Ayuda al front en el formulario de registro)
+        Task<string?> CheckInternalCodeAsync(string internalCode);
     }
 }
