@@ -53,6 +53,15 @@ namespace Api_Tlapaleria.Services
                     if (presentacion.Product == null || !presentacion.Product.IsActive)
                         throw new Exception($"El producto base para la presentación '{presentacion.Name}' no está disponible.");
 
+                    // ====================================================================================
+                    // ---> BLINDAJE: VALIDACIÓN DE FRACCIONES
+                    // Si el producto NO permite fracciones (AllowFractions == false)
+                    // Evaluamos si la cantidad trae decimales usando (item.Quantity % 1 != 0)
+                    // ====================================================================================
+                    if (!presentacion.Product.AllowFractions && (item.Quantity % 1 != 0))
+                    {
+                        throw new Exception($"El producto '{presentacion.Product.Name}' se vende por piezas enteras ({presentacion.Product.UnitOfMeasure}) y no permite vender cantidades con decimales (intentaste vender: {item.Quantity}).");
+                    }
                     // 2. MATEMÁTICAS DE INVENTARIO
                     decimal cantidadBaseARestar = item.Quantity * presentacion.StockFactor;
 
@@ -73,7 +82,7 @@ namespace Api_Tlapaleria.Services
                         Quantity = item.Quantity,
                         StockFactorApplied = presentacion.StockFactor,
                         UnitPrice = presentacion.Price,
-                        Subtotal = item.Quantity * presentacion.Price
+                        Subtotal = Math.Round(item.Quantity * presentacion.Price, 2, MidpointRounding.AwayFromZero)
                     };
 
                     venta.TotalAmount += detalle.Subtotal;

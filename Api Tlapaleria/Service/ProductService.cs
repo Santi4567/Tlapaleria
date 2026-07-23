@@ -55,6 +55,7 @@ namespace Api_Tlapaleria.Services
                     SupplierPrice = datos.SupplierPrice,
                     ProfitMargin = datos.ProfitMargin,
                     UnitOfMeasure = datos.UnitOfMeasure,
+                    AllowFractions = datos.AllowFractions,
                     CurrentStock = datos.InitialStock,
                     IsInventoryTracked = datos.IsInventoryTracked,
                     HasExpiration = datos.HasExpiration,           
@@ -209,6 +210,7 @@ namespace Api_Tlapaleria.Services
                 productoExistente.SupplierPrice = datos.SupplierPrice;
                 productoExistente.ProfitMargin = datos.ProfitMargin;
                 productoExistente.UnitOfMeasure = datos.UnitOfMeasure;
+                productoExistente.AllowFractions = datos.AllowFractions;
                 productoExistente.IsInventoryTracked = datos.IsInventoryTracked;
                 productoExistente.HasExpiration = datos.HasExpiration;           
                 productoExistente.NextExpirationDate = datos.NextExpirationDate; 

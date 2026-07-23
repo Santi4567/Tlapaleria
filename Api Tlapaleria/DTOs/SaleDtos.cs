@@ -8,9 +8,8 @@ namespace Api_Tlapaleria.DTOs
         [Required(ErrorMessage = "La presentación del producto es obligatoria.")]
         public int PresentationId { get; set; }
 
-        [Required(ErrorMessage = "La cantidad es obligatoria.")]
-        [Range(1, int.MaxValue, ErrorMessage = "La cantidad debe ser al menos 1 unidad entera.")]
-        public int Quantity { get; set; }
+        [Range(0.001, 999999.999, ErrorMessage = "La cantidad debe ser mayor a 0.")]
+        public decimal Quantity { get; set; }
     }
 
     public class CreateSaleDto

@@ -10,7 +10,7 @@ namespace Api_Tlapaleria.Models
         public int Id { get; set; }
 
         [Required(ErrorMessage = "El folio es obligatorio.")]
-        [MaxLength(20)]
+        [MaxLength(50)]
         public string Folio { get; set; } = string.Empty;
 
         [Required]
@@ -22,7 +22,6 @@ namespace Api_Tlapaleria.Models
         [MaxLength(50)]
         public string PaymentMethod { get; set; } = string.Empty;
 
-        // --- NUEVA COLUMNA ---
         [MaxLength(100)]
         public string? PaymentReference { get; set; } // Puede ser "500", "AUTH-048291", "SPEI-884920", etc.
 

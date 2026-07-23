@@ -22,7 +22,7 @@ internal class Program
  /_/   \_\|_)   (____)  \____/(____) \____/  
 ");
         Console.WriteLine("ejecutando...");
-        Console.WriteLine("versión 1.4\n");
+        Console.WriteLine("versión 1.5\n");
         // -------------------------
 
         var builder = WebApplication.CreateBuilder(args);
@@ -271,7 +271,7 @@ internal class Program
             Console.ResetColor();
 
             Console.WriteLine("Running...");
-            Console.WriteLine("version 1.4\n");
+            Console.WriteLine("version 1.5\n");
 
             // --- LEEMOS Y MOSTRAMOS LOS PUERTOS ACTIVOS ---
             Console.ForegroundColor = ConsoleColor.Yellow;
@@ -282,6 +282,7 @@ internal class Program
 
             Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine("\ns4lm0.exe\n");
+            Console.WriteLine("\nLog's:\n");
             Console.ResetColor();
         });
 

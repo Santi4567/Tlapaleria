@@ -46,6 +46,9 @@ namespace Api_Tlapaleria.DTOs
         [Required]
         public string UnitOfMeasure { get; set; } // "KG"
 
+        //Se agrego no para matar las presentaciones si no para vender sobrantes de material y no crear presentaciones para el
+        public bool AllowFractions { get; set; } = false; // Se vende por fraccion? 1.5m, 0.255g
+
         public bool IsInventoryTracked { get; set; } = true; // Por defecto lo rastrea
 
         public decimal InitialStock { get; set; } // Stock inicial al crearlo (ej: 50)

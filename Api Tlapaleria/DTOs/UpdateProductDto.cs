@@ -43,6 +43,8 @@ namespace Api_Tlapaleria.DTOs
         [Required]
         public string UnitOfMeasure { get; set; }
 
+        public bool AllowFractions { get; set; } = false;
+
         [Required]
         public bool IsInventoryTracked { get; set; }
 

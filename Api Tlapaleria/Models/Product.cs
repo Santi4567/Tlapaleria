@@ -45,7 +45,10 @@ namespace Api_Tlapaleria.Models
         public string UnitOfMeasure { get; set; }
 
         [Column(TypeName = "decimal(10,3)")]
+
         public decimal CurrentStock { get; set; }
+
+        public bool AllowFractions { get; set; } = false;
 
         public List<ProductPresentation> Presentations { get; set; } = new List<ProductPresentation>();
 
