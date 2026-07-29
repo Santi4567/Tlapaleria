@@ -16,7 +16,6 @@ namespace Api_Tlapaleria.Controllers
             {
                 status = "online",
                 message = "API LEO funcionando correctamente.",
-                version = "1.0",
                 timestamp = DateTime.Now,
                 system = "s4lm0.exe"
             });

@@ -2,15 +2,15 @@
 using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Models;
 using Api_Tlapaleria.Services;
+using Api_Tlapaleria.Extensions; // Agregado para GetUserId()
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using System.Security.Claims;
 
 namespace Api_Tlapaleria.Controllers
 {
     [Route("api/[controller]")]
     [ApiController]
-    [Authorize] // Blindado
+    [Authorize]
     public class SalesController : ControllerBase
     {
         private readonly ISaleService _saleService;
@@ -20,80 +20,45 @@ namespace Api_Tlapaleria.Controllers
             _saleService = saleService;
         }
 
-        // POST: api/sales
         [HttpPost]
-        [RequierePermiso("add.sales")] // Solo los usuarios con rol de cajero/admin pueden cobrar
+        [RequierePermiso("add.sales")]
         public async Task<ActionResult<ApiResponse<Sale>>> CreateSale([FromBody] CreateSaleDto saleDto)
         {
-            try
-            {
-                // 1. Extraemos quién está cobrando desde el Token JWT
-                var claimId = User.FindFirst(ClaimTypes.NameIdentifier)?.Value
-                              ?? User.FindFirst("id")?.Value;
+            int userIdToken = User.GetUserId();
+            var venta = await _saleService.CreateSaleAsync(saleDto, userIdToken);
 
-                if (string.IsNullOrEmpty(claimId) || !int.TryParse(claimId, out int userIdToken))
-                {
-                    return Unauthorized(ApiResponse<object>.Error("Token inválido o identidad no encontrada."));
-                }
-
-                // 2. Ejecutamos la super transacción de venta
-                var venta = await _saleService.CreateSaleAsync(saleDto, userIdToken);
-
-                return Ok(ApiResponse<Sale>.Exito(venta, "¡Venta registrada exitosamente!"));
-            }
-            catch (Exception ex)
-            {
-                // Si falta stock, si la presentación no existe o la BD falla, 
-                // rebotamos el error exacto al frontend sin guardar nada a medias.
-                return BadRequest(ApiResponse<object>.Error(ex.Message));
-            }
+            return Ok(ApiResponse<Sale>.Exito(venta, "¡Venta registrada exitosamente!"));
         }
 
-        // GET: api/sales?searchFolio=123&page=1&pageSize=50
         [HttpGet]
-        [RequierePermiso("view.sales")] // Permiso para ver el historial
+        [RequierePermiso("view.sales")]
         public async Task<ActionResult<ApiResponse<PagedResponse<Sale>>>> GetSales(
             [FromQuery] string? searchFolio = null,
             [FromQuery] int page = 1,
             [FromQuery] int pageSize = 50)
         {
-            try
-            {
-                // Protecciones de paginación para evitar abusos
-                if (page < 1) page = 1;
-                if (pageSize < 1) pageSize = 50;
-                if (pageSize > 100) pageSize = 100; // Máximo 100 tickets por página
+            if (page < 1) page = 1;
+            if (pageSize < 1) pageSize = 50;
+            if (pageSize > 100) pageSize = 100;
 
-                var historialVentas = await _saleService.GetSalesAsync(searchFolio, page, pageSize);
+            var historialVentas = await _saleService.GetSalesAsync(searchFolio, page, pageSize);
 
-                return Ok(ApiResponse<PagedResponse<Sale>>.Exito(historialVentas, "Historial de ventas obtenido."));
-            }
-            catch (Exception ex)
-            {
-                return BadRequest(ApiResponse<object>.Error(ex.Message));
-            }
+            return Ok(ApiResponse<PagedResponse<Sale>>.Exito(historialVentas, "Historial de ventas obtenido."));
         }
 
-        // GET: api/sales/{id}
         [HttpGet("{id}")]
-        [RequierePermiso("view.sales")] // Reutilizamos el permiso de lectura
+        [RequierePermiso("view.sales")]
         public async Task<ActionResult<ApiResponse<Sale>>> GetSaleById(int id)
         {
-            try
-            {
-                var ticket = await _saleService.GetSaleByIdAsync(id);
+            var ticket = await _saleService.GetSaleByIdAsync(id);
 
-                if (ticket == null)
-                {
-                    return NotFound(ApiResponse<object>.Error($"No se encontró ningún ticket con el ID {id}."));
-                }
-
-                return Ok(ApiResponse<Sale>.Exito(ticket, "Ticket recuperado exitosamente."));
-            }
-            catch (Exception ex)
+            // Mantenemos esta validación lógica manual si no está dentro de tu servicio
+            if (ticket == null)
             {
-                return BadRequest(ApiResponse<object>.Error(ex.Message));
+                return NotFound(ApiResponse<object>.Error($"No se encontró ningún ticket con el ID {id}."));
             }
+
+            return Ok(ApiResponse<Sale>.Exito(ticket, "Ticket recuperado exitosamente."));
         }
     }
 }
