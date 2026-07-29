@@ -46,6 +46,7 @@ namespace Api_Tlapaleria.Models
 
         [Column(TypeName = "decimal(10,3)")]
 
+        [ConcurrencyCheck]
         public decimal CurrentStock { get; set; }
 
         public bool AllowFractions { get; set; } = false;

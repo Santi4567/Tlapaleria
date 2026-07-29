@@ -1,10 +1,11 @@
 ﻿using Api_Tlapaleria.Data;
 using Api_Tlapaleria.DTOs;
+using Api_Tlapaleria.Enums;
 using Api_Tlapaleria.Models;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.RateLimiting;
-using System.Threading.RateLimiting;
+using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
+using System.Threading.RateLimiting;
 
 namespace Api_Tlapaleria.Services
 {
@@ -98,7 +99,7 @@ namespace Api_Tlapaleria.Services
                         {
                             ProductId = presentacion.Product.Id,
                             UserId = userId,
-                            MovementType = "Venta",
+                            MovementType = MovementType.Venta,
                             Quantity = cantidadBaseARestar,
                             PreviousStock = stockAnterior,
                             NewStock = presentacion.Product.CurrentStock,

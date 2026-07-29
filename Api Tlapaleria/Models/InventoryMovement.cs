@@ -1,4 +1,5 @@
-﻿using System.ComponentModel.DataAnnotations;
+﻿using Api_Tlapaleria.Enums;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Api_Tlapaleria.Models
@@ -20,8 +21,7 @@ namespace Api_Tlapaleria.Models
         public User? User { get; set; }
 
         [Required]
-        [MaxLength(30)]
-        public string MovementType { get; set; }
+        public MovementType MovementType { get; set; }
 
         [Column(TypeName = "decimal(10,3)")]
         public decimal Quantity { get; set; }
