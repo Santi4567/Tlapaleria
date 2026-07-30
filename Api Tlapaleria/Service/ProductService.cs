@@ -126,6 +126,7 @@ namespace Api_Tlapaleria.Services
                     // Busca en los HIJOS (Presentaciones)
                     p.Presentations.Any(pres => pres.Barcode == term || pres.Code == term)
                 ))
+                .OrderBy(p => p.Name) // <-- ORDEN ALFABÉTICO
                 .Take(10) // <-- LÍMITE: Corta la consulta al llegar a 10 resultados (LIMIT 10 en SQL)
                 .ToListAsync();
 
@@ -147,6 +148,7 @@ namespace Api_Tlapaleria.Services
 
             // 4. Traemos SOLO los registros de la página solicitada
             var productos = await query
+                .OrderBy(p => p.Name)              // <-- Orden Alfabetico
                 .Skip((pageNumber - 1) * pageSize) // Si estoy en la pag 2 y el size es 50, salta los primeros 50
                 .Take(pageSize)                    // Toma los siguientes 50
                 .ToListAsync();                    // Aquí es donde realmente va a la BD
