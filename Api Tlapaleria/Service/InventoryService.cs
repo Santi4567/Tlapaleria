@@ -122,5 +122,83 @@ namespace Api_Tlapaleria.Services
                 CurrentPage = pageNumber
             };
         }
+        //ENPOINT MAESTRO 4 EN 1
+        // ID del producto. Si es 'null', Entity Framework ignora este filtro y trae el catálogo completo.
+        //int? productId = null,
+
+        // Fecha de inicio. Si tiene valor, la consulta agregará un: WHERE CreatedAt >= 'startDate 00:00:00'
+        //DateTime? startDate = null,
+
+        // Fecha de fin. Si tiene valor, la consulta agregará un: WHERE CreatedAt <= 'endDate 23:59:59'
+        //DateTime? endDate = null,
+
+        // El tipo de movimiento. Si tiene valor (ej. 2), la consulta filtrará: WHERE MovementType = 2
+        //MovementType? movementType = null,
+
+        // Página solicitada. Se usa para calcular el salto de registros (.Skip)
+        //int pageNumber = 1,
+
+        // Límite de registros. Se usa para tomar solo ese bloque de datos (.Take)
+        ///int pageSize = 50);
+        public async Task<PagedResponse<InventoryMovement>> GetMovementsAsync(
+            int? productId = null,
+            DateTime? startDate = null,
+            DateTime? endDate = null,
+            MovementType? movementType = null,
+            int pageNumber = 1,
+            int pageSize = 50)
+        {
+            // 1. Iniciamos la consulta optimizada
+            var query = _context.InventoryMovements
+                .AsNoTracking()
+                .Include(m => m.Product)
+                .Include(m => m.User)
+                .AsQueryable();
+
+            // 2. Filtro 1: Por Producto (Si lo mandan)
+            if (productId.HasValue)
+            {
+                query = query.Where(m => m.ProductId == productId.Value);
+            }
+
+            // 3. Filtro 2: Por Tipo de Movimiento (Enum)
+            if (movementType.HasValue)
+            {
+                query = query.Where(m => m.MovementType == movementType.Value);
+            }
+
+            // 4. Filtro 3: Por Rango de Fechas
+            if (startDate.HasValue)
+            {
+                // Ignoramos la hora para que empiece a buscar desde las 00:00:00 de ese día
+                query = query.Where(m => m.CreatedAt >= startDate.Value.Date);
+            }
+
+            if (endDate.HasValue)
+            {
+                // Extendemos la fecha de fin hasta las 23:59:59 para incluir todo ese día
+                var finDelDia = endDate.Value.Date.AddDays(1).AddTicks(-1);
+                query = query.Where(m => m.CreatedAt <= finDelDia);
+            }
+
+            // 5. Matemáticas de paginación
+            var totalItems = await query.CountAsync();
+            var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
+
+            // 6. Ejecutamos ordenando siempre del más reciente al más antiguo
+            var movimientos = await query
+                .OrderByDescending(m => m.CreatedAt)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
+
+            return new PagedResponse<InventoryMovement>
+            {
+                Data = movimientos,
+                TotalItems = totalItems,
+                TotalPages = totalPages,
+                CurrentPage = pageNumber
+            };
+        }
     }
 }
