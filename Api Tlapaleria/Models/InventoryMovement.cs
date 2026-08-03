@@ -4,7 +4,7 @@ using System.ComponentModel.DataAnnotations.Schema; // Importante para [NotMappe
 
 namespace Api_Tlapaleria.Models
 {
-    [Table("InventoryMovements")]
+    [Table("inventoryMovements")]
     public class InventoryMovement
     {
         [Key]

@@ -55,7 +55,7 @@ namespace Api_Tlapaleria.Controllers
         [Authorize]
         [RequierePermiso("view.inventorymovements")]
         public async Task<ActionResult<ApiResponse<PagedResponse<InventoryMovement>>>> GetAllMovements(
-            // /api/inventorymovements? productId = 5 & startDate = 2026 - 07 - 31
+            // /api/inventorymovements?productId=5&startDate=2026-07-31
 
             // 1. Recibe un entero (ID). Sirve para filtrar el historial de un solo producto. 
             // Al tener '?', es opcional. Si no se envía, trae de todos los productos.
@@ -80,6 +80,18 @@ namespace Api_Tlapaleria.Controllers
             // Tiene un valor por defecto de 50. El controlador tiene un tope interno para no aceptar más de 100.
             [FromQuery] int pageSize = 50)
         {
+            // --- VALIDACIÓN DE FECHAS ---
+            if (startDate.HasValue && endDate.HasValue && endDate.Value.Date < startDate.Value.Date)
+            {
+                // Retornamos un error 400 (Bad Request) avisando al frontend del error lógico
+                return BadRequest(new
+                {
+                    success = false,
+                    message = "La fecha final no puede ser menor a la fecha de inicio."
+                });
+            }
+            // ----------------------------------
+
             // Límite de seguridad
             if (page < 1) page = 1;
             if (pageSize < 1) pageSize = 50;
@@ -97,4 +109,5 @@ namespace Api_Tlapaleria.Controllers
             return Ok(ApiResponse<PagedResponse<InventoryMovement>>.Exito(historial, "Reporte de inventario generado correctamente."));
         }
     }
+    
 }
