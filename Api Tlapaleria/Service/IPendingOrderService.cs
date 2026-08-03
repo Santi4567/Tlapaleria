@@ -1,21 +1,28 @@
 ﻿using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Models;
+using Api_Tlapaleria.Enums;
 
 namespace Api_Tlapaleria.Services
 {
     public interface IPendingOrderService
     {
-        //Agregar productos a la tabla de pendientes 
         Task<PendingOrder> CreatePendingOrderAsync(CreatePendingOrderDto datos, int userId);
-        //Mostrar Productos pendientes conforme al proveedor y su estado 
-        Task<PagedResponse<PendingOrder>> GetPendingOrdersBySupplierAsync(int supplierId, string status = "Pendiente", int pageNumber = 1, int pageSize = 50);
-        //Buscador por ID 
+
         Task<PendingOrder> GetPendingOrderByIdAsync(int id);
-        //Buscador por nombre,codigo de barras implementando el estado 
-        Task<PagedResponse<PendingOrder>> SearchPendingOrdersAsync(string searchTerm, string status = "Todos", int pageNumber = 1, int pageSize = 50);
-        // Actualizacion de datos
+
+        // EL ENDPOINT MAESTRO QUE REEMPLAZA A TODOS LOS DEMÁS GETs (Excepto GetById)
+        Task<PagedResponse<PendingOrder>> GetAdvancedPendingOrdersAsync(
+            string? search = null,
+            int? supplierId = null,
+            int? productId = null,
+            PendingOrderStatus? status = null,
+            DateTime? startDate = null,
+            DateTime? endDate = null,
+            int pageNumber = 1,
+            int pageSize = 50);
+
         Task<PendingOrder> UpdatePendingOrderAsync(int id, UpdatePendingOrderDto datos, int userId);
-        //Actualizar estatus 
-        Task<PendingOrder> UpdatePendingOrderStatusAsync(int id, string status, int userId);
+
+        Task<PendingOrder> UpdatePendingOrderStatusAsync(int id, PendingOrderStatus status, int userId);
     }
 }

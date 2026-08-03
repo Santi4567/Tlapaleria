@@ -1,6 +1,7 @@
 ﻿using Api_Tlapaleria.Data;
 using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Models;
+using Api_Tlapaleria.Enums; // No olvides tu nuevo namespace de enums
 using Microsoft.EntityFrameworkCore;
 
 namespace Api_Tlapaleria.Services
@@ -18,7 +19,7 @@ namespace Api_Tlapaleria.Services
         public async Task<PendingOrder> CreatePendingOrderAsync(CreatePendingOrderDto datos, int userId) // Recibimos el userId aquí
         {
             //Validamos que el producto no exista dentro de la tabal de pedidos para evitar duplicados 
-            var pedidoExistente = await _context.PendingOrders.FirstOrDefaultAsync(po => po.ProductId == datos.ProductId && po.Status == "Pendiente");
+            var pedidoExistente = await _context.PendingOrders.FirstOrDefaultAsync(po => po.ProductId == datos.ProductId && po.Status == PendingOrderStatus.Pendiente);
 
             if (pedidoExistente != null)
             {
@@ -54,7 +55,7 @@ namespace Api_Tlapaleria.Services
                 UserId = userId, // Asignamos el ID del token 
                 QuantityText = datos.QuantityText,
                 Notes = datos.Notes,
-                Status = "Pendiente",
+                Status = PendingOrderStatus.Pendiente,
                 CreatedAt = DateTime.Now,
                 UpdatedAt = DateTime.Now
             };
@@ -68,52 +69,78 @@ namespace Api_Tlapaleria.Services
 
             return nuevoPedido;
         }
-        //Obtener todos los productos por proveedor y por estado 
-        public async Task<PagedResponse<PendingOrder>> GetPendingOrdersBySupplierAsync(int supplierId, string status = "Pendiente", int pageNumber = 1, int pageSize = 50)
+
+        //Endpoint maestro
+        public async Task<PagedResponse<PendingOrder>> GetAdvancedPendingOrdersAsync(
+            string? search = null,
+            int? supplierId = null,
+            int? productId = null,
+            PendingOrderStatus? status = null,
+            DateTime? startDate = null,
+            DateTime? endDate = null,
+            int pageNumber = 1,
+            int pageSize = 50)
         {
-            // 1. Validar que el estado sea válido (incluyendo nuestro comodín)
-            var estadosValidos = new List<string> { "Pendiente", "Cancelado", "Completado", "Todos" };
+            // --- LÍMITES Y SEGURIDAD ---
+            if (pageNumber < 1) pageNumber = 1;
+            if (pageSize < 1) pageSize = 10;
+            if (pageSize > 100) pageSize = 100;
 
-            // Si el front manda minúsculas o espacios extra, lo limpiamos y capitalizamos la primera letra
-            // (Opcional, pero ayuda a evitar errores de tipeo del frontend)
-            if (!string.IsNullOrWhiteSpace(status))
-            {
-                status = char.ToUpper(status[0]) + status.Substring(1).ToLower();
-            }
-
-            if (!estadosValidos.Contains(status))
-                throw new Exception($"El filtro de estado '{status}' no es válido. Usa uno de estos: {string.Join(", ", estadosValidos)}.");
-
-            // 2. Armamos la consulta base
             var query = _context.PendingOrders
+                .AsNoTracking()
                 .Include(po => po.Product)
                 .Include(po => po.Supplier)
                 .Include(po => po.User)
                 .AsQueryable();
 
-            // 3. Filtro obligatorio por Proveedor
-            if (supplierId == 0)
+            // 1. Filtro: Buscador de texto (Meta 5)
+            if (!string.IsNullOrWhiteSpace(search))
             {
-                query = query.Where(po => po.SupplierId == null);
-            }
-            else
-            {
-                query = query.Where(po => po.SupplierId == supplierId);
+                var term = search.ToLower().Trim();
+                query = query.Where(po =>
+                    po.Product.Name.ToLower().Contains(term) ||
+                    po.Product.InternalCode.ToLower().Contains(term) ||
+                    po.Product.Barcode == term
+                );
             }
 
-            // --- 4. LA MAGIA HÍBRIDA (Filtro por Estado) ---
-            if (status != "Todos")
+            // 2. Filtro: Proveedor (Meta 4)
+            if (supplierId.HasValue)
             {
-                // Si no mandaron el comodín, filtramos estrictamente por lo que pidieron
-                query = query.Where(po => po.Status == status);
+                if (supplierId.Value == 0) // Si mandan 0, asumimos que quieren los que NO tienen proveedor
+                    query = query.Where(po => po.SupplierId == null);
+                else
+                    query = query.Where(po => po.SupplierId == supplierId.Value);
             }
-            // Si mandaron "Todos", simplemente nos saltamos este Where y la BD trae todo el historial
 
-            // 5. Paginación y ejecución
+            // 3. Filtro: Producto específico (Meta 3)
+            if (productId.HasValue && productId.Value > 0)
+            {
+                query = query.Where(po => po.ProductId == productId.Value);
+            }
+
+            // 4. Filtro: Estado (Meta 1 y 2)
+            if (status.HasValue)
+            {
+                query = query.Where(po => po.Status == status.Value);
+            }
+
+            // 5. Filtro: Rango de Fechas
+            if (startDate.HasValue)
+            {
+                query = query.Where(po => po.CreatedAt >= startDate.Value.Date);
+            }
+            if (endDate.HasValue)
+            {
+                var finalDelDia = endDate.Value.Date.AddDays(1).AddTicks(-1);
+                query = query.Where(po => po.CreatedAt <= finalDelDia);
+            }
+
+            // --- PAGINACIÓN Y EJECUCIÓN ---
             var totalItems = await query.CountAsync();
             var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
 
-            var pedidos = await query
+            var resultados = await query
                 .OrderByDescending(po => po.CreatedAt)
                 .Skip((pageNumber - 1) * pageSize)
                 .Take(pageSize)
@@ -121,12 +148,13 @@ namespace Api_Tlapaleria.Services
 
             return new PagedResponse<PendingOrder>
             {
-                Data = pedidos,
+                Data = resultados,
                 TotalItems = totalItems,
                 TotalPages = totalPages,
                 CurrentPage = pageNumber
             };
         }
+
         //Buscador por ID 
         public async Task<PendingOrder> GetPendingOrderByIdAsync(int id)
         {
@@ -142,64 +170,64 @@ namespace Api_Tlapaleria.Services
             return pedido;
         }
 
-        //Buscador por nombre,codigo, codigo de barras con estado 
-        public async Task<PagedResponse<PendingOrder>> SearchPendingOrdersAsync(string searchTerm, string status = "Todos", int pageNumber = 1, int pageSize = 50)
+        // ==============================================================
+        // NUEVO MÉTODO: Filtros avanzados (Fechas, Producto, Completados)
+        // ==============================================================
+        public async Task<PagedResponse<PendingOrder>> GetAdvancedPendingOrdersAsync(
+            bool excludeCompleted = false,
+            DateTime? startDate = null,
+            DateTime? endDate = null,
+            int? productId = null,
+            int pageNumber = 1,
+            int pageSize = 50)
         {
-            // --- 0. SEGURIDAD Y LÍMITES ESTRICTOS ---
+            // --- LÍMITES Y SEGURIDAD ---
             if (pageNumber < 1) pageNumber = 1;
             if (pageSize < 1) pageSize = 10;
-            if (pageSize > 50) pageSize = 50; // <-- LÍMITE BLINDADO: Nadie podrá pedir más de 50 pedidos por página (o cámbialo a 10 si prefieres menos)
+            if (pageSize > 100) pageSize = 100; // Permitir 100 si es para un reporte de fechas
 
-            // Si no hay texto, regresamos una respuesta paginada vacía
-            if (string.IsNullOrWhiteSpace(searchTerm))
-                return new PagedResponse<PendingOrder>
-                {
-                    Data = new List<PendingOrder>(),
-                    TotalItems = 0,
-                    TotalPages = 0,
-                    CurrentPage = pageNumber
-                };
-
-            var term = searchTerm.ToLower().Trim();
-
-            // 1. Validar y limpiar el estado
-            var estadosValidos = new List<string> { "Pendiente", "Cancelado", "Completado", "Todos" };
-
-            if (!string.IsNullOrWhiteSpace(status))
-            {
-                status = char.ToUpper(status[0]) + status.Substring(1).ToLower();
-            }
-
-            if (!estadosValidos.Contains(status))
-                throw new Exception($"El filtro de estado '{status}' no es válido. Usa: {string.Join(", ", estadosValidos)}.");
-
-            // 2. Armamos la consulta base con la búsqueda de texto y optimización
             var query = _context.PendingOrders
-                .AsNoTracking() // <-- OPTIMIZACIÓN EXTRA: Evita saturar la memoria RAM vigilando cambios en tablas relacionadas
+                .AsNoTracking()
                 .Include(po => po.Product)
                 .Include(po => po.Supplier)
                 .Include(po => po.User)
-                .Where(po =>
-                    po.Product.Name.ToLower().Contains(term) ||
-                    po.Product.InternalCode.ToLower().Contains(term) ||
-                    po.Product.Barcode == term
-                )
                 .AsQueryable();
 
-            // 3. Aplicamos el filtro híbrido de estado
-            if (status != "Todos")
+            // 1. Filtro: Excluir Completados (Trae Pendientes y Cancelados)
+            if (excludeCompleted)
             {
-                query = query.Where(po => po.Status == status);
+                query = query.Where(po => po.Status != PendingOrderStatus.Completado);
+            }
+            // Si es false, simplemente trae TODOS por defecto
+
+            // 2. Filtro: Rango de fechas o día específico
+            if (startDate.HasValue)
+            {
+                // Comparamos desde las 00:00:00 del día
+                query = query.Where(po => po.CreatedAt >= startDate.Value.Date);
             }
 
-            // --- 4. PAGINACIÓN CON LÍMITE CONTROLADO ---
+            if (endDate.HasValue)
+            {
+                // Comparamos hasta las 23:59:59 del día final
+                var finalDelDia = endDate.Value.Date.AddDays(1).AddTicks(-1);
+                query = query.Where(po => po.CreatedAt <= finalDelDia);
+            }
+
+            // 3. Filtro: Historial de un producto en específico
+            if (productId.HasValue && productId.Value > 0)
+            {
+                query = query.Where(po => po.ProductId == productId.Value);
+            }
+
+            // --- PAGINACIÓN ---
             var totalItems = await query.CountAsync();
             var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
 
             var resultados = await query
                 .OrderByDescending(po => po.CreatedAt) // Los más recientes primero
-                .Skip((pageNumber - 1) * pageSize)     // Nos saltamos las páginas anteriores
-                .Take(pageSize)                        // Tomamos solo el límite permitido por esta página (máximo 50)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
                 .ToListAsync();
 
             return new PagedResponse<PendingOrder>
@@ -210,6 +238,7 @@ namespace Api_Tlapaleria.Services
                 CurrentPage = pageNumber
             };
         }
+
         //Actualizacion de Datos
         public async Task<PendingOrder> UpdatePendingOrderAsync(int id, UpdatePendingOrderDto datos, int userId)
         {
@@ -223,7 +252,7 @@ namespace Api_Tlapaleria.Services
                 throw new Exception($"El pedido con ID {id} no existe.");
 
             // Opcional pero recomendado: No dejar editar pedidos que ya se completaron
-            if (pedidoExistente.Status == "Completado")
+            if (pedidoExistente.Status == PendingOrderStatus.Completado)
                 throw new Exception("No puedes modificar un pedido que ya ha sido completado y recibido.");
 
             // 2. Validamos el Proveedor (si es que mandaron uno o lo cambiaron)
@@ -261,14 +290,12 @@ namespace Api_Tlapaleria.Services
 
             return pedidoExistente;
         }
+
         //Actualizar el estado del producto
-        public async Task<PendingOrder> UpdatePendingOrderStatusAsync(int id, string status, int userId)
+        public async Task<PendingOrder> UpdatePendingOrderStatusAsync(int id, PendingOrderStatus status, int userId)
         {
             // 1. Validar que el estado enviado sea uno de los oficiales
-            var estadosValidos = new List<string> { "Pendiente", "Cancelado", "Completado" };
-
-            if (!estadosValidos.Contains(status))
-                throw new Exception($"El estado '{status}' no es válido. Usa uno de estos: {string.Join(", ", estadosValidos)}");
+            // (Comentario conservado, la validación se eliminó por el Enum)
 
             // 2. Buscar el pedido
             var pedidoExistente = await _context.PendingOrders

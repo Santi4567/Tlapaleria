@@ -1,5 +1,6 @@
 ﻿using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using Api_Tlapaleria.Enums;
 
 namespace Api_Tlapaleria.Models
 {
@@ -34,8 +35,7 @@ namespace Api_Tlapaleria.Models
         public string? Notes { get; set; } // "Si está caro, no pedir"
 
         [Required]
-        [MaxLength(30)]
-        public string Status { get; set; } = "Pendiente"; // Control de flujo
+        public PendingOrderStatus Status { get; set; } = PendingOrderStatus.Pendiente; // Control de flujo[cite: 3]
 
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public DateTime UpdatedAt { get; set; } = DateTime.Now;

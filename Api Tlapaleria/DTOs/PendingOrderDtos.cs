@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using Api_Tlapaleria.Enums;
 
 namespace Api_Tlapaleria.DTOs
 {
@@ -30,7 +31,6 @@ namespace Api_Tlapaleria.DTOs
     public class UpdatePendingOrderStatusDto
     {
         [Required(ErrorMessage = "El estado es obligatorio.")]
-        [MaxLength(30)]
-        public string Status { get; set; }
+        public PendingOrderStatus Status { get; set; }
     }
 }
