@@ -5,8 +5,12 @@ namespace Api_Tlapaleria.DTOs
 {
     public class CreatePendingOrderDto
     {
-        [Required(ErrorMessage = "Debes seleccionar un producto.")]
-        public int ProductId { get; set; }
+        // Ahora es opcional (permite NULL)
+        public int? ProductId { get; set; }
+
+        // Campo para productos fuera de catálogo
+        [MaxLength(150)]
+        public string? NewProductName { get; set; }
 
         public int? SupplierId { get; set; }
 
@@ -20,6 +24,8 @@ namespace Api_Tlapaleria.DTOs
     }
     public class UpdatePendingOrderDto
     {
+        public int? ProductId { get; set; } // <-- Para enlazar productos temporales
+
         public int? SupplierId { get; set; }
 
         [Required(ErrorMessage = "Debes especificar la cantidad (ej: '3 cajas' o '10 kg').")]
@@ -32,5 +38,15 @@ namespace Api_Tlapaleria.DTOs
     {
         [Required(ErrorMessage = "El estado es obligatorio.")]
         public PendingOrderStatus Status { get; set; }
+    }
+
+    //Historial de cambio de estados 
+    public class PendingOrderHistoryDto
+    {
+        public int Id { get; set; }
+        public int PendingOrderId { get; set; }
+        public string StatusName { get; set; }
+        public string UserName { get; set; }
+        public DateTime CreatedAt { get; set; }
     }
 }

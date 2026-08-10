@@ -24,5 +24,8 @@ namespace Api_Tlapaleria.Services
         Task<PendingOrder> UpdatePendingOrderAsync(int id, UpdatePendingOrderDto datos, int userId);
 
         Task<PendingOrder> UpdatePendingOrderStatusAsync(int id, PendingOrderStatus status, int userId);
+
+        // Historial de estados del Pedido 
+        Task<List<PendingOrderHistoryDto>> GetPendingOrderHistoryAsync(int pendingOrderId);
     }
 }

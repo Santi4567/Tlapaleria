@@ -16,43 +16,48 @@ namespace Api_Tlapaleria.Services
         }
 
         //POST: Crea un nuevo registro en la tabla de Pendientes
-        public async Task<PendingOrder> CreatePendingOrderAsync(CreatePendingOrderDto datos, int userId) // Recibimos el userId aquí
+        // POST: Crea un nuevo registro en la tabla de Pendientes
+        public async Task<PendingOrder> CreatePendingOrderAsync(CreatePendingOrderDto datos, int userId)
         {
-            //Validamos que el producto no exista dentro de la tabal de pedidos para evitar duplicados 
-            var pedidoExistente = await _context.PendingOrders.FirstOrDefaultAsync(po => po.ProductId == datos.ProductId && po.Status == PendingOrderStatus.Pendiente);
+            // ==========================================
+            // 1. VALIDACIÓN DE PRODUCTO NUEVO VS CATÁLOGO
+            // ==========================================
+            if (!datos.ProductId.HasValue && string.IsNullOrWhiteSpace(datos.NewProductName))
+                throw new Exception("Debes seleccionar un producto del catálogo o escribir el nombre del producto nuevo.");
 
-            if (pedidoExistente != null)
+            if (datos.ProductId.HasValue && !string.IsNullOrWhiteSpace(datos.NewProductName))
+                throw new Exception("No puedes enviar un producto del catálogo y un nombre nuevo al mismo tiempo.");
+
+            // Si mandaron ProductId, validamos que exista
+            if (datos.ProductId.HasValue)
             {
-                throw new Exception("El producto ya está anotado en la libreta como Pendiente. Si necesita cambiar algo, actualícelo.");
+                var producto = await _context.Products.FirstOrDefaultAsync(p => p.Id == datos.ProductId && p.IsActive);
+                if (producto == null) throw new Exception("El producto seleccionado no existe o se encuentra inactivo.");
+
+                // Validamos duplicados SOLO si es un producto de catálogo
+                var pedidoExistente = await _context.PendingOrders
+                    .FirstOrDefaultAsync(po => po.ProductId == datos.ProductId && po.Status == PendingOrderStatus.Pendiente);
+                if (pedidoExistente != null) throw new Exception("Este producto ya está anotado en la libreta como Pendiente.");
             }
-
-            var producto = await _context.Products
-                .FirstOrDefaultAsync(p => p.Id == datos.ProductId && p.IsActive);
-
-            if (producto == null)
-                throw new Exception("El producto seleccionado no existe o se encuentra inactivo.");
 
             if (datos.SupplierId.HasValue)
             {
-                var proveedor = await _context.Suppliers
-                    .FirstOrDefaultAsync(s => s.Id == datos.SupplierId.Value && s.IsActive);
-
-                if (proveedor == null)
-                    throw new Exception("El proveedor seleccionado no existe o se encuentra inactivo.");
+                var proveedor = await _context.Suppliers.FirstOrDefaultAsync(s => s.Id == datos.SupplierId.Value && s.IsActive);
+                if (proveedor == null) throw new Exception("El proveedor seleccionado no existe o se encuentra inactivo.");
             }
 
-            // El usuario se valida usando el userId seguro que viene del Token
-            var usuario = await _context.Users
-                .FirstOrDefaultAsync(u => u.Id == userId && u.IsActive);
+            var usuario = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId && u.IsActive);
+            if (usuario == null) throw new Exception("El usuario autenticado no es válido o está inactivo.");
 
-            if (usuario == null)
-                throw new Exception("El usuario autenticado no es válido o está inactivo.");
-
+            // ==========================================
+            // 2. CREACIÓN DEL PEDIDO
+            // ==========================================
             var nuevoPedido = new PendingOrder
             {
                 ProductId = datos.ProductId,
+                NewProductName = datos.NewProductName?.Trim(), // Guardamos el texto libre
                 SupplierId = datos.SupplierId,
-                UserId = userId, // Asignamos el ID del token 
+                UserId = userId,
                 QuantityText = datos.QuantityText,
                 Notes = datos.Notes,
                 Status = PendingOrderStatus.Pendiente,
@@ -61,13 +66,78 @@ namespace Api_Tlapaleria.Services
             };
 
             _context.PendingOrders.Add(nuevoPedido);
+
+            // ==========================================
+            // 3. REGISTRO EN EL HISTORIAL (Caja Negra)
+            // ==========================================
+            var historial = new PendingOrderHistory
+            {
+                PendingOrder = nuevoPedido, // EF Core asignará el ID automáticamente tras guardar
+                Status = PendingOrderStatus.Pendiente,
+                UserId = userId,
+                CreatedAt = DateTime.Now
+            };
+
+            // Asumiendo que agregaste el DbSet<PendingOrderHistory> al TlapaleriaContext:
+            _context.PendingOrderHistories.Add(historial);
+
             await _context.SaveChangesAsync();
 
-            await _context.Entry(nuevoPedido).Reference(p => p.Product).LoadAsync();
+            // Recargamos datos para devolver un JSON completo
+            if (nuevoPedido.ProductId.HasValue)
+                await _context.Entry(nuevoPedido).Reference(p => p.Product).LoadAsync();
+
             if (nuevoPedido.SupplierId.HasValue)
                 await _context.Entry(nuevoPedido).Reference(p => p.Supplier).LoadAsync();
 
             return nuevoPedido;
+        }
+
+        // Actualizar el estado del producto
+        public async Task<PendingOrder> UpdatePendingOrderStatusAsync(int id, PendingOrderStatus status, int userId)
+        {
+            var pedidoExistente = await _context.PendingOrders
+                .Include(po => po.Product)
+                .Include(po => po.Supplier)
+                .FirstOrDefaultAsync(po => po.Id == id);
+
+            if (pedidoExistente == null)
+                throw new Exception($"El pedido con ID {id} no existe.");
+
+            // ==========================================
+            // 1. REGLA PARA PRODUCTOS NUEVOS
+            // ==========================================
+            // Si intentan COMPLETAR el pedido, pero no tiene ProductId (era producto nuevo), bloqueamos.
+            if (status == PendingOrderStatus.Completado && !pedidoExistente.ProductId.HasValue)
+            {
+                throw new Exception($"Antes de marcar como 'Completado', debes dar de alta el producto '{pedidoExistente.NewProductName}' en el catálogo y asignarle su ID.");
+            }
+
+            var usuario = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId && u.IsActive);
+            if (usuario == null) throw new Exception("El usuario autenticado no es válido.");
+
+            // ==========================================
+            // 2. CAMBIO DE ESTADO
+            // ==========================================
+            pedidoExistente.Status = status;
+            pedidoExistente.UserId = userId;
+            pedidoExistente.UpdatedAt = DateTime.Now;
+
+            // ==========================================
+            // 3. REGISTRO EN EL HISTORIAL (Caja Negra)
+            // ==========================================
+            var historial = new PendingOrderHistory
+            {
+                PendingOrderId = pedidoExistente.Id,
+                Status = status,
+                UserId = userId,
+                CreatedAt = DateTime.Now
+            };
+            _context.PendingOrderHistories.Add(historial);
+
+            await _context.SaveChangesAsync();
+
+            return pedidoExistente;
         }
 
         //Endpoint maestro
@@ -93,14 +163,17 @@ namespace Api_Tlapaleria.Services
                 .Include(po => po.User)
                 .AsQueryable();
 
-            // 1. Filtro: Buscador de texto (Meta 5)
+            // 1. Filtro: Buscador de texto
             if (!string.IsNullOrWhiteSpace(search))
             {
                 var term = search.ToLower().Trim();
                 query = query.Where(po =>
-                    po.Product.Name.ToLower().Contains(term) ||
-                    po.Product.InternalCode.ToLower().Contains(term) ||
-                    po.Product.Barcode == term
+                    (po.Product != null && (
+                        po.Product.Name.ToLower().Contains(term) ||
+                        po.Product.InternalCode.ToLower().Contains(term) ||
+                        po.Product.Barcode == term
+                    )) ||
+                    (po.NewProductName != null && po.NewProductName.ToLower().Contains(term)) // <-- Busca también en los nuevos
                 );
             }
 
@@ -262,21 +335,21 @@ namespace Api_Tlapaleria.Services
                 throw new Exception("El pedido ya está cerrado (Cancelado o Completado). No se permiten modificaciones.");
             }
 
-            // Regla B: Si el estado es "Pedido", solo permitimos tocar las notas
+            // Regla B: Si el estado es "Pedido"
             if (pedidoExistente.Status == PendingOrderStatus.Pedido)
             {
                 // Verificamos que no intenten cambiar la cantidad o el proveedor
                 if (pedidoExistente.QuantityText != datos.QuantityText ||
                     pedidoExistente.SupplierId != datos.SupplierId)
                 {
-                    throw new Exception("El pedido ya fue enviado al proveedor. En este estado únicamente está permitido actualizar las Notas.");
+                    throw new Exception("El pedido ya fue enviado. En este estado únicamente está permitido actualizar las Notas o enlazar el Producto oficial.");
                 }
 
                 // Si pasan la validación, aplicamos solo las notas
                 pedidoExistente.Notes = datos.Notes;
             }
 
-            // Regla C: Si el estado es "Pendiente", se puede editar todo libremente
+            // Regla C: Si el estado es "Pendiente"
             else if (pedidoExistente.Status == PendingOrderStatus.Pendiente)
             {
                 if (datos.SupplierId.HasValue && datos.SupplierId != pedidoExistente.SupplierId)
@@ -294,58 +367,68 @@ namespace Api_Tlapaleria.Services
                 pedidoExistente.Notes = datos.Notes;
             }
 
-            // 3. Validar al usuario que realiza la acción
+            // ==========================================
+            // 3. ENLACE DEL NUEVO PRODUCTO
+            // ==========================================
+            // Esto se ejecuta tanto para "Pendiente" como para "Pedido"
+            if (datos.ProductId.HasValue && datos.ProductId != pedidoExistente.ProductId)
+            {
+                var producto = await _context.Products
+                    .FirstOrDefaultAsync(p => p.Id == datos.ProductId.Value && p.IsActive);
+
+                if (producto == null)
+                    throw new Exception("El producto que intentas enlazar no existe o está inactivo en el catálogo principal.");
+
+                // Inyectamos el ID oficial para que reemplace al producto temporal
+                pedidoExistente.ProductId = datos.ProductId.Value;
+            }
+
+            // 4. Validar al usuario que realiza la acción
             var usuario = await _context.Users
                 .FirstOrDefaultAsync(u => u.Id == userId && u.IsActive);
 
             if (usuario == null)
                 throw new Exception("El usuario autenticado no es válido o está inactivo.");
 
-            // 4. Actualizamos los rastros de auditoría
+            // 5. Actualizamos los rastros de auditoría
             pedidoExistente.UserId = userId;
             pedidoExistente.UpdatedAt = DateTime.Now;
 
-            // 5. Guardamos en base de datos
+            // 6. Guardamos en base de datos
             await _context.SaveChangesAsync();
 
+            // Recargamos las relaciones por si sufrieron cambios en este proceso
             if (pedidoExistente.SupplierId.HasValue)
                 await _context.Entry(pedidoExistente).Reference(p => p.Supplier).LoadAsync();
+
+            if (pedidoExistente.ProductId.HasValue)
+                await _context.Entry(pedidoExistente).Reference(p => p.Product).LoadAsync();
 
             return pedidoExistente;
         }
 
-        //Actualizar el estado del producto
-        public async Task<PendingOrder> UpdatePendingOrderStatusAsync(int id, PendingOrderStatus status, int userId)
+        // GET: Obtiene la línea de tiempo de un pedido
+        public async Task<List<PendingOrderHistoryDto>> GetPendingOrderHistoryAsync(int pendingOrderId)
         {
-            // 1. Validar que el estado enviado sea uno de los oficiales
-            // (Comentario conservado, la validación se eliminó por el Enum)
+            var existePedido = await _context.PendingOrders.AnyAsync(po => po.Id == pendingOrderId);
+            if (!existePedido)
+                throw new Exception($"El pedido con ID {pendingOrderId} no existe.");
 
-            // 2. Buscar el pedido
-            var pedidoExistente = await _context.PendingOrders
-                .Include(po => po.Product)
-                .Include(po => po.Supplier)
-                .FirstOrDefaultAsync(po => po.Id == id);
+            var historial = await _context.PendingOrderHistories
+                .Include(h => h.User) // Traemos la tabla users para obtener el nombre
+                .Where(h => h.PendingOrderId == pendingOrderId)
+                .OrderBy(h => h.CreatedAt) // Orden cronológico (del más viejo al más nuevo)
+                .Select(h => new PendingOrderHistoryDto
+                {
+                    Id = h.Id,
+                    PendingOrderId = h.PendingOrderId,
+                    StatusName = h.Status.ToString(), // Convierte el Enum (0,1,2,3) a texto ("Pendiente", "Pedido", etc.)
+                    UserName = h.User.Name, // Aquí usamos el Name de tu tabla de users
+                    CreatedAt = h.CreatedAt
+                })
+                .ToListAsync();
 
-            if (pedidoExistente == null)
-                throw new Exception($"El pedido con ID {id} no existe.");
-
-            // 3. Validar al usuario que está deslizando la tarjeta
-            var usuario = await _context.Users
-                .FirstOrDefaultAsync(u => u.Id == userId && u.IsActive);
-
-            if (usuario == null)
-                throw new Exception("El usuario autenticado no es válido o está inactivo.");
-
-            // 4. Aplicar el cambio de estado
-            pedidoExistente.Status = status;
-
-            // 5. Dejar rastro de quién lo hizo y a qué hora
-            pedidoExistente.UserId = userId;
-            pedidoExistente.UpdatedAt = DateTime.Now;
-
-            await _context.SaveChangesAsync();
-
-            return pedidoExistente;
+            return historial;
         }
     }
 }

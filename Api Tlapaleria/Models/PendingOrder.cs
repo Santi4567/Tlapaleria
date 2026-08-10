@@ -11,8 +11,13 @@ namespace Api_Tlapaleria.Models
         public int Id { get; set; }
 
         // --- RELACIÓN: PRODUCTO ---
-        [Required]
-        public int ProductId { get; set; }
+        // Se quitó [Required] y se agregó '?' a int para que sea opcional
+        public int? ProductId { get; set; }
+
+        // Se agregó la columna para el texto de los productos nuevos
+        [MaxLength(150)]
+        public string? NewProductName { get; set; }
+
         [ForeignKey("ProductId")]
         public Product? Product { get; set; } // De aquí el Nombre y el Código
 
@@ -35,9 +40,13 @@ namespace Api_Tlapaleria.Models
         public string? Notes { get; set; } // "Si está caro, no pedir"
 
         [Required]
-        public PendingOrderStatus Status { get; set; } = PendingOrderStatus.Pendiente; // Control de flujo[cite: 3]
+        public PendingOrderStatus Status { get; set; } = PendingOrderStatus.Pendiente; // Control de flujo
 
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public DateTime UpdatedAt { get; set; } = DateTime.Now;
+
+        // --- RELACIÓN: HISTORIAL ---
+        // Esto permite a Entity Framework saber que un pedido tiene muchos movimientos
+        public virtual ICollection<PendingOrderHistory> History { get; set; } = new List<PendingOrderHistory>();
     }
 }

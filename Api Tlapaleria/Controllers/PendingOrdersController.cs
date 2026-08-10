@@ -84,5 +84,15 @@ namespace Api_Tlapaleria.Controllers
             var pedidoActualizado = await _pendingOrderService.UpdatePendingOrderStatusAsync(id, datos.Status, userIdToken);
             return Ok(ApiResponse<PendingOrder>.Exito(pedidoActualizado, $"El estado del pedido cambió exitosamente a '{datos.Status}'."));
         }
+
+        // GET: api/pendingorders/{id}/history
+        [HttpGet("{id}/history")]
+        [Authorize]
+        [RequierePermiso("view.pendingorders")]
+        public async Task<ActionResult<ApiResponse<List<PendingOrderHistoryDto>>>> GetHistory(int id)
+        {
+            var historial = await _pendingOrderService.GetPendingOrderHistoryAsync(id);
+            return Ok(ApiResponse<List<PendingOrderHistoryDto>>.Exito(historial, "Historial recuperado exitosamente."));
+        }
     }
 }
