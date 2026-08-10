@@ -251,40 +251,63 @@ namespace Api_Tlapaleria.Services
             if (pedidoExistente == null)
                 throw new Exception($"El pedido con ID {id} no existe.");
 
-            // Opcional pero recomendado: No dejar editar pedidos que ya se completaron
-            if (pedidoExistente.Status == PendingOrderStatus.Completado)
-                throw new Exception("No puedes modificar un pedido que ya ha sido completado y recibido.");
+            // ==========================================
+            // 2. REGLAS DE NEGOCIO ESTRICTAS
+            // ==========================================
 
-            // 2. Validamos el Proveedor (si es que mandaron uno o lo cambiaron)
-            if (datos.SupplierId.HasValue && datos.SupplierId != pedidoExistente.SupplierId)
+            // Regla A: Bloqueo total para estados definitivos de cierre
+            if (pedidoExistente.Status == PendingOrderStatus.Cancelado ||
+                pedidoExistente.Status == PendingOrderStatus.Completado)
             {
-                var proveedor = await _context.Suppliers
-                    .FirstOrDefaultAsync(s => s.Id == datos.SupplierId.Value && s.IsActive);
-
-                if (proveedor == null)
-                    throw new Exception("El proveedor seleccionado no existe o se encuentra inactivo.");
+                throw new Exception("El pedido ya está cerrado (Cancelado o Completado). No se permiten modificaciones.");
             }
 
-            // 3. Validar que el usuario que está editando exista
+            // Regla B: Si el estado es "Pedido", solo permitimos tocar las notas
+            if (pedidoExistente.Status == PendingOrderStatus.Pedido)
+            {
+                // Verificamos que no intenten cambiar la cantidad o el proveedor
+                if (pedidoExistente.QuantityText != datos.QuantityText ||
+                    pedidoExistente.SupplierId != datos.SupplierId)
+                {
+                    throw new Exception("El pedido ya fue enviado al proveedor. En este estado únicamente está permitido actualizar las Notas.");
+                }
+
+                // Si pasan la validación, aplicamos solo las notas
+                pedidoExistente.Notes = datos.Notes;
+            }
+
+            // Regla C: Si el estado es "Pendiente", se puede editar todo libremente
+            else if (pedidoExistente.Status == PendingOrderStatus.Pendiente)
+            {
+                if (datos.SupplierId.HasValue && datos.SupplierId != pedidoExistente.SupplierId)
+                {
+                    var proveedor = await _context.Suppliers
+                        .FirstOrDefaultAsync(s => s.Id == datos.SupplierId.Value && s.IsActive);
+
+                    if (proveedor == null)
+                        throw new Exception("El proveedor seleccionado no existe o se encuentra inactivo.");
+                }
+
+                // Aplicamos todos los cambios
+                pedidoExistente.QuantityText = datos.QuantityText;
+                pedidoExistente.SupplierId = datos.SupplierId;
+                pedidoExistente.Notes = datos.Notes;
+            }
+
+            // 3. Validar al usuario que realiza la acción
             var usuario = await _context.Users
                 .FirstOrDefaultAsync(u => u.Id == userId && u.IsActive);
 
             if (usuario == null)
                 throw new Exception("El usuario autenticado no es válido o está inactivo.");
 
-            // 4. Aplicamos los cambios permitidos
-            pedidoExistente.QuantityText = datos.QuantityText;
-            pedidoExistente.Notes = datos.Notes;
-            pedidoExistente.SupplierId = datos.SupplierId;
+            // 4. Actualizamos los rastros de auditoría
+            pedidoExistente.UserId = userId;
+            pedidoExistente.UpdatedAt = DateTime.Now;
 
-            // 5. Actualizamos los rastros de auditoría
-            pedidoExistente.UserId = userId; // El último que le metió mano
-            pedidoExistente.UpdatedAt = DateTime.Now; // Fecha del cambio
-
-            // 6. Guardamos en base de datos
+            // 5. Guardamos en base de datos
             await _context.SaveChangesAsync();
 
-            // Recargamos el proveedor por si lo cambiaron, para que el JSON regrese con el nombre correcto
             if (pedidoExistente.SupplierId.HasValue)
                 await _context.Entry(pedidoExistente).Reference(p => p.Supplier).LoadAsync();
 
