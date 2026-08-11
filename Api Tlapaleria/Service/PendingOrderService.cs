@@ -430,5 +430,173 @@ namespace Api_Tlapaleria.Services
 
             return historial;
         }
+
+        //Recibir mercacia con filtros 
+        public async Task<PendingOrder> ReceivePendingOrderAsync(int id, ReceivePendingOrderDto datos, int userId)
+        {
+            using var transaction = await _context.Database.BeginTransactionAsync();
+
+            try
+            {
+                // 1. Buscamos el pedido con toda la cadena de relaciones necesaria
+                var pedido = await _context.PendingOrders
+                    .Include(po => po.Product)
+                        .ThenInclude(p => p.Presentations)
+                    .FirstOrDefaultAsync(po => po.Id == id);
+
+                if (pedido == null)
+                    throw new Exception($"El pedido con ID {id} no existe.");
+
+                // ==========================================
+                // REGLA ESTRICTA 1: SOLO SE PERMITE SI EL ESTADO ES "PEDIDO" (1)
+                // ==========================================
+                if (pedido.Status != PendingOrderStatus.Pedido)
+                    throw new Exception($"Operación denegada. El pedido actual está en estado '{pedido.Status}'. La recepción de mercancía solo se permite cuando el pedido ya fue enviado al proveedor (Estado 1 - Pedido).");
+
+                // ==========================================
+                // ESCENARIO A: EL PROVEEDOR NO LO TRAJO (Agotado/Cancelado)
+                // ==========================================
+                if (datos.FinalStatus == PendingOrderStatus.Cancelado)
+                {
+                    pedido.Status = PendingOrderStatus.Cancelado;
+                    pedido.UserId = userId;
+                    pedido.UpdatedAt = DateTime.Now;
+
+                    _context.PendingOrderHistories.Add(new PendingOrderHistory
+                    {
+                        PendingOrderId = pedido.Id,
+                        Status = PendingOrderStatus.Cancelado,
+                        UserId = userId,
+                        CreatedAt = DateTime.Now
+                    });
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+                    return pedido;
+                }
+
+                // ==========================================
+                // ESCENARIO B: LA MERCANCÍA SÍ LLEGÓ (Entrada)
+                // ==========================================
+                if (datos.FinalStatus == PendingOrderStatus.Completado)
+                {
+                    if (!pedido.ProductId.HasValue || pedido.Product == null)
+                        throw new Exception("Antes de recibir y sumar mercancía, debes dar de alta el producto nuevo y enlazarle su ID oficial.");
+
+                    if (!pedido.Product.IsActive)
+                        throw new Exception("No puedes recibir mercancía ni actualizar precios de un producto inactivo.");
+
+                    // ==========================================
+                    // REGLA ESTRICTA 2: INVENTARIO OBLIGATORIO
+                    // ==========================================
+                    if (pedido.Product.IsInventoryTracked)
+                    {
+                        if (!datos.ReceivedQuantity.HasValue || datos.ReceivedQuantity.Value <= 0)
+                        {
+                            throw new Exception($"El producto '{pedido.Product.Name}' es inventariable. Debes ingresar obligatoriamente una cantidad recibida mayor a cero.");
+                        }
+                    }
+
+                    // --- 2.1 ACTUALIZAR DATOS DEL PADRE ---
+                    if (datos.NewSupplierPrice.HasValue)
+                        pedido.Product.SupplierPrice = datos.NewSupplierPrice.Value;
+
+                    if (datos.NewProfitMargin.HasValue)
+                        pedido.Product.ProfitMargin = datos.NewProfitMargin.Value;
+
+                    // --- 2.2 ACTUALIZAR PRECIOS DE VENTA (Hijos) ---
+                    if (datos.PresentationPrices != null && datos.PresentationPrices.Any() && pedido.Product.Presentations != null)
+                    {
+                        foreach (var actualizacionHijo in datos.PresentationPrices)
+                        {
+                            var presentacion = pedido.Product.Presentations.FirstOrDefault(p => p.Id == actualizacionHijo.PresentationId);
+
+                            if (presentacion != null && presentacion.IsActive)
+                            {
+                                presentacion.Price = actualizacionHijo.NewPrice;
+                            }
+                        }
+                    }
+
+                    // --- 2.3 SUMAR AL INVENTARIO ---
+                    // Como ya validamos arriba, aquí sabemos con seguridad que si es inventariable, trae cantidad válida.
+                    if (pedido.Product.IsInventoryTracked)
+                    {
+                        // Bloqueo de fracciones
+                        if (!pedido.Product.AllowFractions && (datos.ReceivedQuantity.Value % 1 != 0))
+                        {
+                            throw new InvalidOperationException($"El producto '{pedido.Product.Name}' está configurado para unidades enteras. No puedes ingresar {datos.ReceivedQuantity.Value}.");
+                        }
+
+                        decimal stockAnterior = pedido.Product.CurrentStock;
+                        pedido.Product.CurrentStock += datos.ReceivedQuantity.Value;
+
+                        var movimiento = new InventoryMovement
+                        {
+                            ProductId = pedido.Product.Id,
+                            UserId = userId,
+                            MovementType = MovementType.Entrada,
+                            Quantity = datos.ReceivedQuantity.Value,
+                            PreviousStock = stockAnterior,
+                            NewStock = pedido.Product.CurrentStock,
+                            Notes = "Entrada de mercancía por Proveedor", // TEXTO AUTOMÁTICO
+                            CreatedAt = DateTime.Now
+                        };
+                        _context.InventoryMovements.Add(movimiento);
+                    }
+
+                    // --- 2.4 CERRAR EL PEDIDO ---
+                    pedido.Status = PendingOrderStatus.Completado;
+                    pedido.UserId = userId;
+                    pedido.UpdatedAt = DateTime.Now;
+
+                    _context.PendingOrderHistories.Add(new PendingOrderHistory
+                    {
+                        PendingOrderId = pedido.Id,
+                        Status = PendingOrderStatus.Completado,
+                        UserId = userId,
+                        CreatedAt = DateTime.Now
+                    });
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+                    return pedido;
+                }
+
+                // ==========================================
+                // ESCENARIO C: NO LLEGÓ, REGRESAR A PENDIENTE PARA VOLVER A PEDIR
+                // ==========================================
+                if (datos.FinalStatus == PendingOrderStatus.Pendiente)
+                {
+                    pedido.Status = PendingOrderStatus.Pendiente;
+                    pedido.UserId = userId;
+                    pedido.UpdatedAt = DateTime.Now;
+
+                    _context.PendingOrderHistories.Add(new PendingOrderHistory
+                    {
+                        PendingOrderId = pedido.Id,
+                        Status = PendingOrderStatus.Pendiente,
+                        UserId = userId,
+                        CreatedAt = DateTime.Now
+                    });
+
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+                    return pedido;
+                }
+
+                throw new Exception("El estado final proporcionado no es válido para esta operación (Debe ser Completado, Cancelado o Pendiente).");
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                await transaction.RollbackAsync();
+                throw new InvalidOperationException("Alguien más acaba de modificar el stock de este producto. Recarga la página y vuelve a intentarlo.");
+            }
+            catch (Exception)
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        }
     }
 }

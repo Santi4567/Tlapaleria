@@ -94,5 +94,18 @@ namespace Api_Tlapaleria.Controllers
             var historial = await _pendingOrderService.GetPendingOrderHistoryAsync(id);
             return Ok(ApiResponse<List<PendingOrderHistoryDto>>.Exito(historial, "Historial recuperado exitosamente."));
         }
+
+        // POST: api/pendingorders/{id}/receive
+        [HttpPost("{id}/receive")]
+        [Authorize]
+        [RequierePermiso("edit.pendingorders")]
+        public async Task<ActionResult<ApiResponse<PendingOrder>>> ReceiveOrder(int id, [FromBody] ReceivePendingOrderDto datos)
+        {
+            int userIdToken = User.GetUserId(); // Asumiendo tu método actual para sacar el ID del token
+
+            var pedidoActualizado = await _pendingOrderService.ReceivePendingOrderAsync(id, datos, userIdToken);
+
+            return Ok(ApiResponse<PendingOrder>.Exito(pedidoActualizado, "El pedido fue procesado y cerrado exitosamente."));
+        }
     }
 }

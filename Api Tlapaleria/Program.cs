@@ -22,7 +22,7 @@ internal class Program
  /_/   \_\|_)   (____)  \____/(____) \____/  
 ");
         Console.WriteLine("ejecutando...");
-        Console.WriteLine("versión 2.0\n");
+        Console.WriteLine("versión 2.1\n");
         // -------------------------
 
         var builder = WebApplication.CreateBuilder(args);
@@ -273,7 +273,7 @@ internal class Program
             Console.ResetColor();
 
             Console.WriteLine("Running...");
-            Console.WriteLine("version 2.0\n");
+            Console.WriteLine("version 2.1\n");
 
             // --- LEEMOS Y MOSTRAMOS LOS PUERTOS ACTIVOS ---
             Console.ForegroundColor = ConsoleColor.Yellow;

@@ -27,5 +27,8 @@ namespace Api_Tlapaleria.Services
 
         // Historial de estados del Pedido 
         Task<List<PendingOrderHistoryDto>> GetPendingOrderHistoryAsync(int pendingOrderId);
+
+        //Recibir mercacia 
+        Task<PendingOrder> ReceivePendingOrderAsync(int id, ReceivePendingOrderDto datos, int userId);
     }
 }
