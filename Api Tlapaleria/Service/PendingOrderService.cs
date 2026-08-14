@@ -159,6 +159,7 @@ namespace Api_Tlapaleria.Services
             var query = _context.PendingOrders
                 .AsNoTracking()
                 .Include(po => po.Product)
+                    .ThenInclude(p => p.Presentations) // <-- ESTA ES LA LÍNEA QUE DEBES AGREGAR
                 .Include(po => po.Supplier)
                 .Include(po => po.User)
                 .AsQueryable();
@@ -233,6 +234,7 @@ namespace Api_Tlapaleria.Services
         {
             var pedido = await _context.PendingOrders
                 .Include(po => po.Product)
+                    .ThenInclude(p => p.Presentations) // <-- ESTA ES LA LÍNEA QUE DEBES AGREGAR
                 .Include(po => po.Supplier)
                 .Include(po => po.User) // Traemos quién lo anotó
                 .FirstOrDefaultAsync(po => po.Id == id);
