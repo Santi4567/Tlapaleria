@@ -1,10 +1,11 @@
 ﻿using Api_Tlapaleria.Data;
 using Api_Tlapaleria.DTOs;
-using Api_Tlapaleria.Models; // Tu modelo User
+using Api_Tlapaleria.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
+using System.Security.Cryptography;
 using System.Text;
 
 namespace Api_Tlapaleria.Services
@@ -20,32 +21,55 @@ namespace Api_Tlapaleria.Services
             _config = config;
         }
 
-        public async Task<string?> LoginAsync(LoginDto login)
+        // Modificamos el retorno para devolver ambos tokens
+        public async Task<(string AccessToken, string RefreshToken)?> LoginAsync(LoginDto login)
         {
-            // 1. Buscar usuario por Nombre de Usuario (O Correo si tuvieras la columna)
-            // 1. CAMBIO: Agregamos .Include(u => u.Rol)
-            // Esto le dice a EF: "Cuando traigas al usuario, ve a la tabla Roles y tráeme sus datos también"
             var user = await _context.Users
                 .Include(u => u.Rol)
                 .FirstOrDefaultAsync(u => u.Username == login.UsuarioOCorreo);
 
-            // 2. Si no existe el usuario, retornamos null (Login fallido)
-            if (user == null) return null;
+            if (user == null || !user.IsActive) return null;
 
-            // --- Verificamos si está activo ---
-            if (!user.IsActive)
-            {
-                // Opcional: Podrías lanzar una excepción específica o retornar null
-                // throw new Exception("Tu cuenta ha sido desactivada.");
-                return null;
-            }
-
-            // 3. Verificar contraseña usando BCrypt
             bool passwordValido = BCrypt.Net.BCrypt.Verify(login.Password, user.Passwd);
             if (!passwordValido) return null;
 
-            // 4. Generar el Token JWT
-            return GenerarToken(user);
+            // Generamos ambos tokens
+            var jwtToken = GenerarToken(user);
+            var refreshToken = GenerateRefreshToken();
+
+            // Los guardamos en la base de datos usando los nuevos campos de tu modelo User
+            user.RefreshToken = refreshToken;
+            user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7); // Expira en 7 días
+
+            await _context.SaveChangesAsync();
+
+            return (jwtToken, refreshToken);
+        }
+
+        // Para validar y generar nuevos tokens
+        public async Task<(string AccessToken, string RefreshToken)?> RefreshSessionAsync(string oldRefreshToken)
+        {
+            // Buscamos al usuario que tenga este refresh token exacto
+            var user = await _context.Users
+                .Include(u => u.Rol)
+                .FirstOrDefaultAsync(u => u.RefreshToken == oldRefreshToken);
+
+            // Validamos que exista, esté activo y el token no haya expirado
+            if (user == null || !user.IsActive || user.RefreshTokenExpiryTime <= DateTime.UtcNow)
+            {
+                return null;
+            }
+
+            // Si todo está bien, generamos un nuevo par de tokens
+            var newJwtToken = GenerarToken(user);
+            var newRefreshToken = GenerateRefreshToken();
+
+            // Actualizamos la base de datos
+            user.RefreshToken = newRefreshToken;
+            user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
+            await _context.SaveChangesAsync();
+
+            return (newJwtToken, newRefreshToken);
         }
 
         private string GenerarToken(User user)
@@ -57,8 +81,6 @@ namespace Api_Tlapaleria.Services
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
                 new Claim(ClaimTypes.Name, user.Username),
-        
-                // 2. CAMBIO: Accedemos al Nombre a través del objeto Rol
                 new Claim(ClaimTypes.Role, user.Rol.Nombre)
             };
 
@@ -66,10 +88,19 @@ namespace Api_Tlapaleria.Services
                 _config["Jwt:Issuer"],
                 _config["Jwt:Audience"],
                 claims,
+                // Tiempo de vida corto para el JWT (ej. 15 o 30 minutos)
                 expires: DateTime.Now.AddMinutes(double.Parse(_config["Jwt:ExpireMinutes"])),
                 signingCredentials: credentials);
 
             return new JwtSecurityTokenHandler().WriteToken(token);
+        }
+
+        public string GenerateRefreshToken()
+        {
+            var randomNumber = new byte[32];
+            using var rng = RandomNumberGenerator.Create();
+            rng.GetBytes(randomNumber);
+            return Convert.ToBase64String(randomNumber);
         }
     }
 }
