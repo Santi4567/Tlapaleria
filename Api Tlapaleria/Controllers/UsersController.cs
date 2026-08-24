@@ -70,26 +70,18 @@ namespace Api_Tlapaleria.Controllers
         [HttpGet]
         [RequierePermiso("view.users")]
         public async Task<ActionResult<ApiResponse<PagedResponse<UserDto>>>> GetAll(
-            [FromQuery] bool isActive = true,
-            [FromQuery] int? rolId = null,
-            [FromQuery] int pageNumber = 1,
-            [FromQuery] int pageSize = 10)
+        [FromQuery] string? termino = null,
+        [FromQuery] bool isActive = true,
+        [FromQuery] int? rolId = null,
+        [FromQuery] int pageNumber = 1,
+        [FromQuery] int pageSize = 10)
         {
             int requestorId = User.GetUserId();
-            var resultado = await _userService.GetAllUsersAsync(requestorId, isActive, rolId, pageNumber, pageSize);
-            return Ok(ApiResponse<PagedResponse<UserDto>>.Exito(resultado));
-        }
 
-        [HttpGet("search/{termino}")]
-        [RequierePermiso("view.users")]
-        public async Task<ActionResult<ApiResponse<List<UserDto>>>> Search(
-            string termino,
-            [FromQuery] bool isActive = true,
-            [FromQuery] int? rolId = null)
-        {
-            int requestorId = User.GetUserId();
-            var resultados = await _userService.SearchUsersAsync(termino, requestorId, isActive, rolId);
-            return Ok(ApiResponse<List<UserDto>>.Exito(resultados));
+            // Solo le pasamos todos los parámetros al servicio, ¡él se encarga de todo!
+            var resultado = await _userService.GetAllUsersAsync(requestorId, termino, isActive, rolId, pageNumber, pageSize);
+
+            return Ok(ApiResponse<PagedResponse<UserDto>>.Exito(resultado));
         }
 
         [HttpDelete("delete/{id}")]

@@ -22,17 +22,15 @@ namespace Api_Tlapaleria.Services
             int targetUserId, 
             string newPassword);
 
-        //Traer todos los registros de la tabla Users
+        // Traer todos los registros de la tabla Users (Ahora incluye búsqueda)
         Task<PagedResponse<UserDto>> GetAllUsersAsync(
             int requestorId,
+            string? termino = null, 
             bool isActive = true,
             int? rolId = null,
             int pageNumber = 1,
             int pageSize = 10);
 
-        // Buscar por coincidencia (Nombre O Username)
-        // 2. Buscar por coincidencia con filtros dinámicos (Estado + Rol opcional)
-        Task<List<UserDto>> SearchUsersAsync(string termino, int requestorId, bool isActive = true, int? rolId = null);
 
         //Eliminar 
         Task<bool> DeleteUserAsync(
