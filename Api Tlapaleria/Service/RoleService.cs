@@ -269,5 +269,82 @@ namespace Api_Tlapaleria.Services // Nota: Asegúrate de que coincida con tu car
 
             return await GetRoleByIdAsync(rolId);
         }
+
+        //-------------------------------------------------------------------------------------------------------------------------------
+
+        // =====================================================================
+        // ASIGNAR MULTIPLES PERMISOS A UN ROL (BULK)
+        // =====================================================================
+        public async Task<RolDto> AssignMultiplePermissionsAsync(int rolId, List<int> permisosIds)
+        {
+            var rol = await _context.Roles
+                .Include(r => r.Permisos)
+                .FirstOrDefaultAsync(r => r.Id == rolId);
+
+            if (rol == null) throw new Exception("Rol no encontrado.");
+
+            // Evitar procesar duplicados en la lista de entrada
+            var uniqueIds = permisosIds.Distinct().ToList();
+
+            // Validar que TODOS los permisos existan (Caso A)
+            var permisosBD = await _context.Permisos
+                .Where(p => uniqueIds.Contains(p.Id))
+                .ToListAsync();
+
+            if (permisosBD.Count != uniqueIds.Count)
+            {
+                throw new Exception("Operación rechazada: Uno o más permisos especificados no existen en el sistema.");
+            }
+
+            // Agregar solo los que el rol no tenga actualmente
+            foreach (var permiso in permisosBD)
+            {
+                if (!rol.Permisos.Any(p => p.Id == permiso.Id))
+                {
+                    rol.Permisos.Add(permiso);
+                }
+            }
+
+            await _context.SaveChangesAsync();
+            return await GetRoleByIdAsync(rolId);
+        }
+
+        // =====================================================================
+        // REMOVER MULTIPLES PERMISOS DE UN ROL (BULK)
+        // =====================================================================
+        public async Task<RolDto> RemoveMultiplePermissionsAsync(int rolId, List<int> permisosIds)
+        {
+            var rol = await _context.Roles
+                .Include(r => r.Permisos)
+                .FirstOrDefaultAsync(r => r.Id == rolId);
+
+            if (rol == null) throw new Exception("Rol no encontrado.");
+
+            if (rol.Nombre == "Admin")
+                throw new Exception("Por seguridad del sistema, no se pueden remover permisos del rol 'Admin'.");
+
+            var uniqueIds = permisosIds.Distinct().ToList();
+
+            // Validar que los permisos existan en el catálogo general (Caso A)
+            var permisosBDCount = await _context.Permisos
+                .Where(p => uniqueIds.Contains(p.Id))
+                .CountAsync();
+
+            if (permisosBDCount != uniqueIds.Count)
+            {
+                throw new Exception("Operación rechazada: Intentas remover uno o más permisos que no existen en el sistema.");
+            }
+
+            // Identificar cuáles de esos permisos realmente tiene el rol para removerlos
+            var permisosARemover = rol.Permisos.Where(p => uniqueIds.Contains(p.Id)).ToList();
+
+            foreach (var permiso in permisosARemover)
+            {
+                rol.Permisos.Remove(permiso);
+            }
+
+            await _context.SaveChangesAsync();
+            return await GetRoleByIdAsync(rolId);
+        }
     }
 }

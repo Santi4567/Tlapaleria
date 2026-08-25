@@ -21,5 +21,12 @@ namespace Api_Tlapaleria.Services
         Task<RolDto> AssignPermissionAsync(int rolId, int permisoId);
         //Remover Permisos 
         Task<RolDto> RemovePermissionAsync(int rolId, int permisoId);
+
+        // Asiganar permisos en forma de lista
+        Task<RolDto> AssignMultiplePermissionsAsync(int rolId, List<int> permisosIds);
+
+        // Eliminar permisos en forma de lista
+
+        Task<RolDto> RemoveMultiplePermissionsAsync(int rolId, List<int> permisosIds);
     }
 }

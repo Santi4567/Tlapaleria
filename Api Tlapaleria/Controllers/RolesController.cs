@@ -97,6 +97,7 @@ namespace Api_Tlapaleria.Controllers
             return Ok(ApiResponse<object>.Exito(null, "Rol eliminado correctamente del sistema"));
         }
 
+        //AGREGAR UN SOLO PERMISOS ala vez
         [HttpPost("{rolId}/permissions/{permisoId}")]
         [RequierePermiso("edit.roles")]
         public async Task<ActionResult<ApiResponse<RolDto>>> AssignPermission(int rolId, int permisoId)
@@ -105,12 +106,33 @@ namespace Api_Tlapaleria.Controllers
             return Ok(ApiResponse<RolDto>.Exito(actualizado, "Permiso asignado correctamente al rol"));
         }
 
+        //ELIMINAR UNO SOLO permiso a la vez
         [HttpDelete("{rolId}/permissions/{permisoId}")]
         [RequierePermiso("edit.roles")]
         public async Task<ActionResult<ApiResponse<RolDto>>> RemovePermission(int rolId, int permisoId)
         {
             var actualizado = await _roleService.RemovePermissionAsync(rolId, permisoId);
             return Ok(ApiResponse<RolDto>.Exito(actualizado, "Permiso removido correctamente del rol"));
+        }
+
+        // AGREAGR VARIOS PERMISOS A LA VEZ 
+
+        [HttpPost("{rolId}/permissions/bulk")]
+        [RequierePermiso("edit.roles")]
+        public async Task<ActionResult<ApiResponse<RolDto>>> AssignMultiplePermissions(int rolId, [FromBody] List<int> permisosIds)
+        {
+            var actualizado = await _roleService.AssignMultiplePermissionsAsync(rolId, permisosIds);
+            return Ok(ApiResponse<RolDto>.Exito(actualizado, "Permisos asignados correctamente al rol de forma masiva"));
+        }
+
+
+        // ELIMINAR VARIOS PERMISOS A LA VEZ 
+        [HttpDelete("{rolId}/permissions/bulk")]
+        [RequierePermiso("edit.roles")]
+        public async Task<ActionResult<ApiResponse<RolDto>>> RemoveMultiplePermissions(int rolId, [FromBody] List<int> permisosIds)
+        {
+            var actualizado = await _roleService.RemoveMultiplePermissionsAsync(rolId, permisosIds);
+            return Ok(ApiResponse<RolDto>.Exito(actualizado, "Permisos removidos correctamente del rol de forma masiva"));
         }
     }
 }
