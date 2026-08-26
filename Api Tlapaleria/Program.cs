@@ -22,7 +22,7 @@ internal class Program
  /_/   \_\|_)   (____)  \____/(____) \____/  
 ");
         Console.WriteLine("ejecutando...");
-        Console.WriteLine("versión 2.3\n");
+        Console.WriteLine("versión 2.3.1\n");
         // -------------------------
 
         var builder = WebApplication.CreateBuilder(args);
@@ -46,10 +46,14 @@ internal class Program
         {
             options.AddPolicy("PoliticaFrontend", policy =>
             {
-                policy.SetIsOriginAllowed(origin => true) // <-- ¡LA MAGIA! Acepta literalmente cualquier IP o URL
+                policy.WithOrigins(
+                        "http://localhost:1420",  // Entorno de desarrollo local (Vite)
+                        "tauri://localhost",      // App de escritorio Tauri en Linux/Windows
+                        "https://tauri.localhost" // App de escritorio Tauri en macOS
+                      )
                       .AllowAnyHeader()
                       .AllowAnyMethod()
-                      .AllowCredentials(); // Mantiene la seguridad de tus cookies intacta
+                      .AllowCredentials();
             });
         });
 
@@ -273,7 +277,7 @@ internal class Program
             Console.ResetColor();
 
             Console.WriteLine("Running...");
-            Console.WriteLine("version 2.3\n");
+            Console.WriteLine("version 2.3.1\n");
 
             // --- LEEMOS Y MOSTRAMOS LOS PUERTOS ACTIVOS ---
             Console.ForegroundColor = ConsoleColor.Yellow;
