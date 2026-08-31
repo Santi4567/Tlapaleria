@@ -6,7 +6,7 @@ namespace Api_Tlapaleria.Services
     public interface IProductService
     {
         //Creacion de Productos
-        Task<Product> CreateProductAsync(CreateProductDto datos);
+        Task<Product> CreateProductAsync(CreateProductDto datos, int userIdToken);
         //Buscador por ID Producto
         Task<Product> GetProductByIdAsync(int id, bool isActive = true);
         //Buscador de Prodcuto(Name,Barcode,internalCode)
@@ -14,7 +14,7 @@ namespace Api_Tlapaleria.Services
         //Mostrar los productos en paginacion 
         Task<PagedResponse<Product>> GetAllProductsAsync(int pageNumber = 1, int pageSize = 50, bool isActive = true);
         //Actualizar los productos 
-        Task<Product> UpdateProductAsync(int id, UpdateProductDto datos);
+        Task<Product> UpdateProductAsync(int id, UpdateProductDto datos, int userIdToken);
         //Eliminar(Desactivar) Producto
         Task<bool> DeleteProductAsync(int id);
         //Reactivar un producto 

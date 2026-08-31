@@ -15,7 +15,7 @@ namespace Api_Tlapaleria.Services
         }
 
         //POST: Crear un nuevo registro en la tabla de Productos
-        public async Task<Product> CreateProductAsync(CreateProductDto datos)
+        public async Task<Product> CreateProductAsync(CreateProductDto datos, int userIdToken)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
 
@@ -32,15 +32,14 @@ namespace Api_Tlapaleria.Services
                         throw new Exception($"El código '{datos.InternalCode}' ya está siendo usado por un producto activo.");
                 }
 
-                // 2. VALIDAR QUE EL PROVEEDOR EXISTA (--- NUEVO ---)
+                // 2. VALIDAR QUE EL PROVEEDOR EXISTA 
                 bool existeProveedor = await _context.Suppliers
-                    .AnyAsync(s => s.Id == datos.SupplierId && s.IsActive); // Opcional: validar que esté activo
+                    .AnyAsync(s => s.Id == datos.SupplierId && s.IsActive);
 
                 if (!existeProveedor)
                 {
                     throw new Exception($"El proveedor seleccionado (ID {datos.SupplierId}) no existe o está inactivo.");
                 }
-                // ----------------------------------------------------
 
                 // 3. CREAR AL PADRE
                 var nuevoProducto = new Product
@@ -58,8 +57,8 @@ namespace Api_Tlapaleria.Services
                     AllowFractions = datos.AllowFractions,
                     CurrentStock = datos.InitialStock,
                     IsInventoryTracked = datos.IsInventoryTracked,
-                    HasExpiration = datos.HasExpiration,           
-                    NextExpirationDate = datos.NextExpirationDate, 
+                    HasExpiration = datos.HasExpiration,
+                    NextExpirationDate = datos.NextExpirationDate,
                     IsActive = true
                 };
 
@@ -83,7 +82,36 @@ namespace Api_Tlapaleria.Services
                 }
 
                 await _context.SaveChangesAsync();
-                await transaction.CommitAsync();
+                // <-- AQUÍ estaba el "await transaction.CommitAsync();" que sobraba. Se quitó.
+                //     La transacción se queda ABIERTA hasta que también se guarde el historial.
+
+                // 5. Historial del Costo del Proveedor
+                var historialCosto = new ProductSupplierPriceHistory
+                {
+                    ProductId = nuevoProducto.Id,
+                    OldSupplierPrice = 0,
+                    NewSupplierPrice = datos.SupplierPrice,
+                    UserId = userIdToken
+                };
+                _context.ProductSupplierPriceHistories.Add(historialCosto);
+
+                // 6. Historial de Precios por CADA presentación creada
+                // nuevoProducto.Presentations ya trae los Ids porque EF los generó en el SaveChangesAsync de arriba
+                foreach (var presNueva in nuevoProducto.Presentations)
+                {
+                    var historialPrecio = new PresentationPriceHistory
+                    {
+                        PresentationId = presNueva.Id,
+                        ProductId = nuevoProducto.Id,
+                        OldPrice = 0,
+                        NewPrice = presNueva.Price,
+                        UserId = userIdToken
+                    };
+                    _context.PresentationPriceHistories.Add(historialPrecio);
+                }
+
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync(); // <-- único commit, hasta el final
 
                 return nuevoProducto;
             }
@@ -93,67 +121,61 @@ namespace Api_Tlapaleria.Services
                 throw;
             }
         }
+
         //Buscador ID Producto GET
         public async Task<Product> GetProductByIdAsync(int id, bool isActive = true)
         {
-            // Buscamos el producto Padre y traemos a sus Hijos con .Include()
             var product = await _context.Products
                 .Include(p => p.Presentations)
-                .Include(p => p.Supplier) // Opcional: Traemos datos del proveedor por si los necesitas ver
-                .FirstOrDefaultAsync(p => p.Id == id && p.IsActive == isActive); 
+                .Include(p => p.Supplier)
+                .FirstOrDefaultAsync(p => p.Id == id && p.IsActive == isActive);
 
             if (product == null)
                 throw new Exception($"El producto con ID {id} no fue encontrado.");
 
             return product;
         }
+
         //Buscador de Prodcuto(Name,Barcode,internalCode) GET
         public async Task<List<Product>> SearchProductsAsync(string? searchTerm, bool isActive = true)
         {
             if (string.IsNullOrWhiteSpace(searchTerm))
-                return new List<Product>(); // Si mandan vacío, regresamos lista vacía
+                return new List<Product>();
 
             var term = searchTerm.ToLower().Trim();
 
             var resultados = await _context.Products
-                .AsNoTracking() // <-- OPTIMIZACIÓN : Evita que EF sobrecargue la memoria vigilando cambios
+                .AsNoTracking()
                 .Include(p => p.Presentations)
                 .Where(p => p.IsActive == isActive && (
-                    // Busca en el PADRE
                     p.Name.ToLower().Contains(term) ||
                     p.InternalCode.ToLower().Contains(term) ||
                     p.Barcode == term ||
-                    // Busca en los HIJOS (Presentaciones)
                     p.Presentations.Any(pres => pres.Barcode == term || pres.Code == term)
                 ))
-                .OrderBy(p => p.Name) // <-- ORDEN ALFABÉTICO
-                .Take(10) // <-- LÍMITE: Corta la consulta al llegar a 10 resultados (LIMIT 10 en SQL)
+                .OrderBy(p => p.Name)
+                .Take(10)
                 .ToListAsync();
 
             return resultados;
         }
+
         //Muestra de todos los productos mediante paginacion 
         public async Task<PagedResponse<Product>> GetAllProductsAsync(int pageNumber = 1, int pageSize = 50, bool isActive = true)
         {
-            // 1. Armamos la consulta base (sin ejecutarla aún)
             var query = _context.Products
                 .Include(p => p.Presentations)
                 .Where(p => p.IsActive == isActive);
 
-            // 2. Contamos el total real de registros en la base de datos
             var totalItems = await query.CountAsync();
-
-            // 3. Calculamos el total de páginas
             var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
 
-            // 4. Traemos SOLO los registros de la página solicitada
             var productos = await query
-                .OrderBy(p => p.Name)              // <-- Orden Alfabetico
-                .Skip((pageNumber - 1) * pageSize) // Si estoy en la pag 2 y el size es 50, salta los primeros 50
-                .Take(pageSize)                    // Toma los siguientes 50
-                .ToListAsync();                    // Aquí es donde realmente va a la BD
+                .OrderBy(p => p.Name)
+                .Skip((pageNumber - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync();
 
-            // 5. Devolvemos el paquete completo
             return new PagedResponse<Product>
             {
                 Data = productos,
@@ -162,8 +184,9 @@ namespace Api_Tlapaleria.Services
                 CurrentPage = pageNumber
             };
         }
+
         //Actualizar Prodcutos usando reglas 
-        public async Task<Product> UpdateProductAsync(int id, UpdateProductDto datos)
+        public async Task<Product> UpdateProductAsync(int id, UpdateProductDto datos, int userIdToken)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
 
@@ -180,13 +203,13 @@ namespace Api_Tlapaleria.Services
                 if (!productoExistente.IsActive)
                     throw new Exception("No puedes editar un producto que está desactivado/eliminado. Reactívalo primero.");
 
-                // 2. REGLA: Validar que el InternalCode no se repita (excluyendo este mismo producto)
+                // 2. REGLA: InternalCode no repetido
                 bool existeInternalCode = await _context.Products
                     .AnyAsync(p => p.InternalCode == datos.InternalCode && p.Id != id);
                 if (existeInternalCode)
                     throw new Exception($"El código interno '{datos.InternalCode}' ya está siendo usado por otro producto.");
 
-                // 3. REGLA: Validar que el Barcode del Padre no se repita (si es que mandan uno)
+                // 3. REGLA: Barcode del padre no repetido
                 if (!string.IsNullOrWhiteSpace(datos.Barcode))
                 {
                     bool existeBarcode = await _context.Products
@@ -195,11 +218,14 @@ namespace Api_Tlapaleria.Services
                         throw new Exception($"El código de barras '{datos.Barcode}' ya está registrado en otro producto.");
                 }
 
-                // 4. REGLA: Validar que el Proveedor exista
+                // 4. REGLA: Proveedor válido
                 bool existeProveedor = await _context.Suppliers
                     .AnyAsync(s => s.Id == datos.SupplierId && s.IsActive);
                 if (!existeProveedor)
                     throw new Exception("El proveedor seleccionado no existe o está inactivo.");
+
+                // --- CAPTURAMOS EL COSTO VIEJO ANTES DE PISARLO ---
+                decimal costoAnterior = productoExistente.SupplierPrice;
 
                 // --- ACTUALIZAMOS DATOS DEL PADRE ---
                 productoExistente.InternalCode = datos.InternalCode;
@@ -214,13 +240,25 @@ namespace Api_Tlapaleria.Services
                 productoExistente.UnitOfMeasure = datos.UnitOfMeasure;
                 productoExistente.AllowFractions = datos.AllowFractions;
                 productoExistente.IsInventoryTracked = datos.IsInventoryTracked;
-                productoExistente.HasExpiration = datos.HasExpiration;           
-                productoExistente.NextExpirationDate = datos.NextExpirationDate; 
+                productoExistente.HasExpiration = datos.HasExpiration;
+                productoExistente.NextExpirationDate = datos.NextExpirationDate;
                 // El stock NO se toca aquí.
+
+                // --- SI CAMBIÓ EL COSTO, GUARDAMOS SU HISTORIAL ---
+                if (costoAnterior != datos.SupplierPrice)
+                {
+                    _context.ProductSupplierPriceHistories.Add(new ProductSupplierPriceHistory
+                    {
+                        ProductId = productoExistente.Id,
+                        OldSupplierPrice = costoAnterior,
+                        NewSupplierPrice = datos.SupplierPrice,
+                        UserId = userIdToken
+                    });
+                }
 
                 // --- MAGIA DE LOS HIJOS (Presentaciones) ---
 
-                // A. Encontrar cuáles presentaciones eliminar (Están en BD pero no en el DTO)
+                // A. Eliminar las que están en BD pero no en el DTO
                 var idsEnDto = datos.Presentations.Where(p => p.Id.HasValue).Select(p => p.Id.Value).ToList();
                 var presentacionesAEliminar = productoExistente.Presentations
                     .Where(p => !idsEnDto.Contains(p.Id))
@@ -228,26 +266,41 @@ namespace Api_Tlapaleria.Services
 
                 _context.ProductPresentations.RemoveRange(presentacionesAEliminar);
 
-                // B. Actualizar las que ya existen y agregar las nuevas
+                // B. Actualizar existentes y preparar las nuevas
+                var presentacionesNuevas = new List<ProductPresentation>();
+
                 foreach (var presDto in datos.Presentations)
                 {
                     if (presDto.Id.HasValue && presDto.Id.Value > 0)
                     {
-                        // Actualizar existente
                         var presExistente = productoExistente.Presentations.FirstOrDefault(p => p.Id == presDto.Id.Value);
                         if (presExistente != null)
                         {
+                            decimal precioAnterior = presExistente.Price;
+
                             presExistente.Name = presDto.Name;
                             presExistente.Code = presDto.Code;
                             presExistente.Barcode = presDto.Barcode;
                             presExistente.Price = presDto.Price;
                             presExistente.StockFactor = presDto.StockFactor;
+
+                            // Si cambió el precio público de ESTA presentación, va su propio historial
+                            if (precioAnterior != presDto.Price)
+                            {
+                                _context.PresentationPriceHistories.Add(new PresentationPriceHistory
+                                {
+                                    PresentationId = presExistente.Id,
+                                    ProductId = productoExistente.Id,
+                                    OldPrice = precioAnterior,
+                                    NewPrice = presDto.Price,
+                                    UserId = userIdToken
+                                });
+                            }
                         }
                     }
                     else
                     {
-                        // Agregar nueva
-                        productoExistente.Presentations.Add(new ProductPresentation
+                        var presentacionNueva = new ProductPresentation
                         {
                             Name = presDto.Name,
                             Code = presDto.Code,
@@ -255,8 +308,25 @@ namespace Api_Tlapaleria.Services
                             Price = presDto.Price,
                             StockFactor = presDto.StockFactor,
                             IsActive = true
-                        });
+                        };
+                        productoExistente.Presentations.Add(presentacionNueva);
+                        presentacionesNuevas.Add(presentacionNueva); // guardamos la referencia; aún no tiene Id
                     }
+                }
+
+                await _context.SaveChangesAsync(); // EF le asigna Id a cada presentación nueva aquí
+
+                // C. Ahora sí, historial "de nacimiento" para las presentaciones nuevas (0 -> precio inicial)
+                foreach (var nueva in presentacionesNuevas)
+                {
+                    _context.PresentationPriceHistories.Add(new PresentationPriceHistory
+                    {
+                        PresentationId = nueva.Id, // ya viene poblado por EF
+                        ProductId = productoExistente.Id,
+                        OldPrice = 0,
+                        NewPrice = nueva.Price,
+                        UserId = userIdToken
+                    });
                 }
 
                 await _context.SaveChangesAsync();
@@ -270,69 +340,58 @@ namespace Api_Tlapaleria.Services
                 throw;
             }
         }
+
         //Eliminar(Desactiavr) Productos 
         public async Task<bool> DeleteProductAsync(int id)
         {
-            // Buscamos el producto con sus presentaciones
             var producto = await _context.Products
                 .Include(p => p.Presentations)
                 .FirstOrDefaultAsync(p => p.Id == id);
 
-            // Validaciones
             if (producto == null)
                 throw new Exception($"No se encontró ningún producto con el ID {id}.");
 
             if (!producto.IsActive)
                 throw new Exception("Este producto ya se encuentra inactivo (eliminado).");
 
-            // BORRADO LÓGICO: Apagamos el Padre
             producto.IsActive = false;
 
-            // Apagamos a los Hijos para que ya no salgan en las búsquedas del mostrador
             foreach (var presentacion in producto.Presentations)
             {
                 presentacion.IsActive = false;
             }
 
-            // Guardamos los cambios
             await _context.SaveChangesAsync();
-
             return true;
         }
+
         //Reactivar un producto 
         public async Task<bool> ReactivateProductAsync(int id)
         {
-            // Buscamos el producto con sus presentaciones
             var producto = await _context.Products
                 .Include(p => p.Presentations)
                 .FirstOrDefaultAsync(p => p.Id == id);
 
-            // Validaciones
             if (producto == null)
                 throw new Exception($"No se encontró ningún producto con el ID {id}.");
 
             if (producto.IsActive)
                 throw new Exception("Este producto ya está activo en el sistema.");
 
-            // REACTIVACIÓN: Encendemos al Padre
             producto.IsActive = true;
 
-            // Encendemos a los Hijos para que vuelvan a salir en mostrador
             foreach (var presentacion in producto.Presentations)
             {
                 presentacion.IsActive = true;
             }
 
-            // Guardamos los cambios
             await _context.SaveChangesAsync();
-
             return true;
         }
 
         //Alerta de caduccidad de los productos 
         public async Task<List<ExpiringProductDto>> GetExpiringProductsAsync()
         {
-            // Alerta para productos que caducan en los próximos 30 días
             DateTime limiteAlerta = DateTime.Now.AddDays(30);
 
             var productosEnRiesgo = await _context.Products
@@ -346,14 +405,14 @@ namespace Api_Tlapaleria.Services
                     InternalCode = p.InternalCode,
                     Name = p.Name,
                     NextExpirationDate = p.NextExpirationDate,
-                    // Calculamos los días restantes
                     DaysRemaining = (p.NextExpirationDate.Value - DateTime.Now).Days
                 })
-                .OrderBy(p => p.NextExpirationDate) // Los más urgentes hasta arriba
+                .OrderBy(p => p.NextExpirationDate)
                 .ToListAsync();
 
             return productosEnRiesgo;
         }
+
         // Verificar si un código interno ya está siendo utilizado
         public async Task<string?> CheckInternalCodeAsync(string internalCode)
         {
@@ -362,8 +421,6 @@ namespace Api_Tlapaleria.Services
 
             var term = internalCode.Trim().ToLower();
 
-            // 1. Buscamos solo en la columna InternalCode y seleccionamos ÚNICAMENTE el Nombre
-            // Esto se traduce en SQL como: SELECT Name FROM Products WHERE LOWER(InternalCode) = 'term' LIMIT 1;
             var nombreProducto = await _context.Products
                 .AsNoTracking()
                 .Where(p => p.InternalCode.ToLower() == term)

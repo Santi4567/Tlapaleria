@@ -19,6 +19,10 @@ namespace Api_Tlapaleria.Data
         public DbSet<Product> Products { get; set; }  //<--- Modelo de la tabla de productos 
         public DbSet<ProductPresentation> ProductPresentations { get; set; } //<--- Modelo la tabla de presentacion del producto
 
+        public DbSet<ProductSupplierPriceHistory> ProductSupplierPriceHistories { get; set; }// <-- Modelo de la tabla de ProductSupplierPriceHistory
+
+        public DbSet<PresentationPriceHistory> PresentationPriceHistories { get; set; }// <-- Modelo de la tabla de PresentationPriceHistory
+
         protected override void OnModelCreating(ModelBuilder modelBuilder) // <--- Configuracion necesaria para mostrar bien los permisos de los usuarios 
         {
             base.OnModelCreating(modelBuilder);

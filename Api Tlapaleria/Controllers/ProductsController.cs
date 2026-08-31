@@ -4,6 +4,7 @@ using Api_Tlapaleria.Models;
 using Api_Tlapaleria.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Api_Tlapaleria.Extensions;
 
 namespace Api_Tlapaleria.Controllers
 {
@@ -23,7 +24,9 @@ namespace Api_Tlapaleria.Controllers
         [RequierePermiso("add.products")]
         public async Task<ActionResult<ApiResponse<Product>>> Create([FromBody] CreateProductDto datos)
         {
-            var productoCreado = await _productService.CreateProductAsync(datos);
+
+            int userIdToken = User.GetUserId();
+            var productoCreado = await _productService.CreateProductAsync(datos,userIdToken);
             return Ok(ApiResponse<Product>.Exito(productoCreado, "Producto y presentaciones registrados correctamente"));
         }
 
@@ -67,7 +70,8 @@ namespace Api_Tlapaleria.Controllers
         [RequierePermiso("edit.products")]
         public async Task<ActionResult<ApiResponse<Product>>> Update(int id, [FromBody] UpdateProductDto datos)
         {
-            var productoActualizado = await _productService.UpdateProductAsync(id, datos);
+            int userIdToken = User.GetUserId();
+            var productoActualizado = await _productService.UpdateProductAsync(id, datos, userIdToken);
             return Ok(ApiResponse<Product>.Exito(productoActualizado, "Producto actualizado correctamente"));
         }
 
