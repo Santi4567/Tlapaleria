@@ -22,7 +22,7 @@ internal class Program
  /_/   \_\|_)   (____)  \____/(____) \____/  
 ");
         Console.WriteLine("ejecutando...");
-        Console.WriteLine("versión 2.3.1\n");
+        Console.WriteLine("versión 2.4\n");
         // -------------------------
 
         var builder = WebApplication.CreateBuilder(args);
@@ -88,6 +88,8 @@ internal class Program
         // PermissionService
         builder.Services.AddScoped<PermissionService>();
 
+        //Reporte de ventas y producto
+        builder.Services.AddScoped<IReportService, ReportService>();
 
         //CONFIGURACIÓN DE JWT Y COOKIES
         builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -277,7 +279,7 @@ internal class Program
             Console.ResetColor();
 
             Console.WriteLine("Running...");
-            Console.WriteLine("version 2.3.1\n");
+            Console.WriteLine("version 2.4\n");
 
             // --- LEEMOS Y MOSTRAMOS LOS PUERTOS ACTIVOS ---
             Console.ForegroundColor = ConsoleColor.Yellow;
