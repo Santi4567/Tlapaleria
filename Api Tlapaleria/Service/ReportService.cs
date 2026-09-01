@@ -94,5 +94,73 @@ namespace Api_Tlapaleria.Services
                 ChartData = chartData
             };
         }
+
+        // -- Reporte de precios para los productos 
+        public async Task<ProductPriceHistoryDto> GetPriceHistoryAsync(int productId)
+        {
+            // 1. Validar que el producto exista, con sus presentaciones
+            var producto = await _context.Products
+                .Include(p => p.Presentations)
+                .FirstOrDefaultAsync(p => p.Id == productId);
+
+            if (producto == null)
+                throw new Exception($"El producto con ID {productId} no fue encontrado.");
+
+            if (!producto.Presentations.Any())
+                throw new Exception("Este producto no tiene presentaciones registradas.");
+
+            // 2. Historial de costo (proveedor) - a nivel Producto, uno solo
+            var eventosCosto = await _context.ProductSupplierPriceHistories
+                .Where(h => h.ProductId == productId)
+                .OrderBy(h => h.CreatedAt)
+                .Select(h => new { h.CreatedAt, Valor = (decimal?)h.NewSupplierPrice })
+                .ToListAsync();
+
+            // 3. Historial de precio público de TODAS las presentaciones de este producto, en una sola consulta
+            var idsPresentaciones = producto.Presentations.Select(p => p.Id).ToList();
+
+            var eventosPrecios = await _context.PresentationPriceHistories
+                .Where(h => idsPresentaciones.Contains(h.PresentationId))
+                .OrderBy(h => h.CreatedAt)
+                .Select(h => new { h.CreatedAt, h.PresentationId, Valor = (decimal?)h.NewPrice })
+                .ToListAsync();
+
+            // 4. Unimos todo en una sola línea de tiempo. PresentationId = null identifica un evento de costo
+            var timeline = new List<(DateTime Fecha, int? PresentationId, decimal? Valor)>();
+            timeline.AddRange(eventosCosto.Select(e => (e.CreatedAt, (int?)null, e.Valor)));
+            timeline.AddRange(eventosPrecios.Select(e => (e.CreatedAt, (int?)e.PresentationId, e.Valor)));
+            timeline = timeline.OrderBy(e => e.Fecha).ToList();
+
+            // 5. Forward-fill: arrastramos el último valor conocido de cada columna
+            decimal? ultimoCosto = null;
+            var ultimoPrecioPorPresentacion = idsPresentaciones.ToDictionary(id => id, id => (decimal?)null);
+
+            var filas = new List<PriceHistoryRowDto>();
+
+            foreach (var evento in timeline)
+            {
+                if (evento.PresentationId == null)
+                    ultimoCosto = evento.Valor;
+                else
+                    ultimoPrecioPorPresentacion[evento.PresentationId.Value] = evento.Valor;
+
+                filas.Add(new PriceHistoryRowDto
+                {
+                    Date = evento.Fecha,
+                    SupplierPrice = ultimoCosto,
+                    PresentationPrices = new Dictionary<int, decimal?>(ultimoPrecioPorPresentacion) // <-- copia, no referencia
+                });
+            }
+
+            return new ProductPriceHistoryDto
+            {
+                ProductId = producto.Id,
+                ProductName = producto.Name,
+                Presentations = producto.Presentations
+                    .Select(p => new PresentationInfoDto { PresentationId = p.Id, Name = p.Name })
+                    .ToList(),
+                History = filas
+            };
+        }
     }
 }
