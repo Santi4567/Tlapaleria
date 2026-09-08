@@ -30,9 +30,9 @@ namespace Api_Tlapaleria.Models
         [ForeignKey("RolId")]
         public Rol Rol { get; set; } // El objeto (para sacar el nombre)
 
-        public string? RefreshToken { get; set; }
-        public DateTime? RefreshTokenExpiryTime { get; set; }
-
         public bool IsActive { get; set; } = true;
+
+        // Realcion con la tabla de UserSession
+        public ICollection<UserSession> Sessions { get; set; } = new List<UserSession>();
     }
 }

@@ -7,6 +7,7 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Security.Cryptography;
 using System.Text;
+using System.Security.Cryptography;
 
 namespace Api_Tlapaleria.Services
 {
@@ -21,7 +22,6 @@ namespace Api_Tlapaleria.Services
             _config = config;
         }
 
-        // Modificamos el retorno para devolver ambos tokens
         public async Task<(string AccessToken, string RefreshToken)?> LoginAsync(LoginDto login)
         {
             var user = await _context.Users
@@ -33,43 +33,89 @@ namespace Api_Tlapaleria.Services
             bool passwordValido = BCrypt.Net.BCrypt.Verify(login.Password, user.Passwd);
             if (!passwordValido) return null;
 
-            // Generamos ambos tokens
             var jwtToken = GenerarToken(user);
-            var refreshToken = GenerateRefreshToken();
+            var refreshTokenPlano = GenerateRefreshToken();
+            var refreshTokenHash = HashRefreshToken(refreshTokenPlano); // Hasheamos para la BD
 
-            // Los guardamos en la base de datos usando los nuevos campos de tu modelo User
-            user.RefreshToken = refreshToken;
-            user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7); // Expira en 7 días
+            // 1. LIMPIEZA: Eliminar sesiones expiradas de este usuario
+            var sesionesExpiradas = await _context.UserSessions
+                .Where(s => s.UserId == user.Id && s.ExpiryTime <= DateTime.UtcNow)
+                .ToListAsync();
 
+            if (sesionesExpiradas.Any())
+            {
+                _context.UserSessions.RemoveRange(sesionesExpiradas);
+            }
+
+            // 2. INSERCIÓN: Guardar la nueva sesión con el token hasheado
+            var nuevaSesion = new UserSession
+            {
+                UserId = user.Id,
+                RefreshToken = refreshTokenHash,
+                ExpiryTime = DateTime.UtcNow.AddDays(7)
+            };
+
+            _context.UserSessions.Add(nuevaSesion);
             await _context.SaveChangesAsync();
 
-            return (jwtToken, refreshToken);
+            // Devolvemos el token plano para que el controlador lo envíe al usuario
+            return (jwtToken, refreshTokenPlano);
         }
 
-        // Para validar y generar nuevos tokens
-        public async Task<(string AccessToken, string RefreshToken)?> RefreshSessionAsync(string oldRefreshToken)
+        public async Task<(string AccessToken, string RefreshToken)?> RefreshSessionAsync(string oldRefreshTokenPlano)
         {
-            // Buscamos al usuario que tenga este refresh token exacto
-            var user = await _context.Users
-                .Include(u => u.Rol)
-                .FirstOrDefaultAsync(u => u.RefreshToken == oldRefreshToken);
+            var oldTokenHash = HashRefreshToken(oldRefreshTokenPlano);
 
-            // Validamos que exista, esté activo y el token no haya expirado
-            if (user == null || !user.IsActive || user.RefreshTokenExpiryTime <= DateTime.UtcNow)
+            // Buscamos usando el HASH
+            var session = await _context.UserSessions
+                .Include(s => s.User)
+                .ThenInclude(u => u.Rol)
+                .FirstOrDefaultAsync(s => s.RefreshToken == oldTokenHash);
+
+            if (session == null || !session.User.IsActive || session.ExpiryTime <= DateTime.UtcNow)
             {
                 return null;
             }
 
-            // Si todo está bien, generamos un nuevo par de tokens
-            var newJwtToken = GenerarToken(user);
-            var newRefreshToken = GenerateRefreshToken();
+            // Generamos los nuevos
+            var newJwtToken = GenerarToken(session.User);
+            var newRefreshTokenPlano = GenerateRefreshToken();
+            var newRefreshTokenHash = HashRefreshToken(newRefreshTokenPlano);
 
-            // Actualizamos la base de datos
-            user.RefreshToken = newRefreshToken;
-            user.RefreshTokenExpiryTime = DateTime.UtcNow.AddDays(7);
+            // Actualizamos esta sesión específica
+            session.RefreshToken = newRefreshTokenHash;
+            session.ExpiryTime = DateTime.UtcNow.AddDays(7);
+
             await _context.SaveChangesAsync();
 
-            return (newJwtToken, newRefreshToken);
+            return (newJwtToken, newRefreshTokenPlano);
+        }
+
+        // NUEVO: Método para cerrar sesión destruyendo el token
+        public async Task<bool> LogoutAsync(string refreshTokenPlano)
+        {
+            var tokenHash = HashRefreshToken(refreshTokenPlano);
+
+            var session = await _context.UserSessions
+                .FirstOrDefaultAsync(s => s.RefreshToken == tokenHash);
+
+            if (session != null)
+            {
+                _context.UserSessions.Remove(session);
+                await _context.SaveChangesAsync();
+                return true;
+            }
+
+            return false;
+        }
+
+        // Método privado para aplicar SHA-256
+        private string HashRefreshToken(string token)
+        {
+            using var sha256 = SHA256.Create();
+            var bytes = Encoding.UTF8.GetBytes(token);
+            var hash = sha256.ComputeHash(bytes);
+            return Convert.ToBase64String(hash);
         }
 
         private string GenerarToken(User user)
@@ -103,4 +149,5 @@ namespace Api_Tlapaleria.Services
             return Convert.ToBase64String(randomNumber);
         }
     }
+
 }

@@ -1,6 +1,8 @@
 ﻿using Api_Tlapaleria.Data;
+using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Services; // Necesario para AuthService
 using Microsoft.AspNetCore.Authentication.JwtBearer; // Necesario para JWT
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.RateLimiting;  // Necesario para el escudo de peticiones 
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens; // Necesario para validar el token
@@ -16,13 +18,13 @@ internal class Program
     {
         // --- PANTALLA DE CARGA ---
         Console.WriteLine(@"
-    ___    ____  ____    __    ____   ____ 
-   / _ \  |  _ \(_  _)  |  )  (  __) /    \
-  / ___ \ |  __/ _)(_   | (_/\ | _) |  ()  |
- /_/   \_\|_)   (____)  \____/(____) \____/  
-");
+            ___    ____  ____    __    ____   ____ 
+           / _ \  |  _ \(_  _)  |  )  (  __) /    \
+          / ___ \ |  __/ _)(_   | (_/\ | _) |  ()  |
+         /_/   \_\|_)   (____)  \____/(____) \____/  
+        ");
         Console.WriteLine("ejecutando...");
-        Console.WriteLine("versión 2.6\n");
+        Console.WriteLine("versión 2.7\n");
         // -------------------------
 
         var builder = WebApplication.CreateBuilder(args);
@@ -35,11 +37,21 @@ internal class Program
         });
 
         //Evita bucles de lectura en json(NO BORRAR/DONT DELETE)
-        builder.Services.AddControllers().AddJsonOptions(x =>
-        {
-            // Ignora los ciclos infinitos en toda la API
-            x.JsonSerializerOptions.ReferenceHandler = ReferenceHandler.IgnoreCycles;
-        });
+        builder.Services.AddControllers()
+            .AddJsonOptions(x =>
+            {
+                // Ignora los ciclos infinitos en toda la API (NO BORRAR)
+                x.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+            })
+            .ConfigureApiBehaviorOptions(options =>
+            {
+                // Atrapa JSON malformados, saltos de línea inválidos o errores de tipos de datos
+                options.InvalidModelStateResponseFactory = context =>
+                {
+                    var errorResponse = ApiResponse<object>.Error("sintaxis incorrecta");
+                    return new BadRequestObjectResult(errorResponse);
+                };
+            });
 
         //CORS 
         builder.Services.AddCors(options =>
@@ -103,7 +115,10 @@ internal class Program
                     ValidateIssuerSigningKey = true,
                     ValidIssuer = builder.Configuration["Jwt:Issuer"],
                     ValidAudience = builder.Configuration["Jwt:Audience"],
-                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"]))
+                    IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(builder.Configuration["Jwt:Key"])),
+
+                    // Zero toleracia 
+                    //ClockSkew = TimeSpan.Zero
                 };
 
                 options.Events = new JwtBearerEvents
@@ -271,15 +286,15 @@ internal class Program
 
             Console.ForegroundColor = ConsoleColor.Cyan; // Un poco de color para la terminal
             Console.WriteLine(@"
-    ___    ____  ____    __    ____   ____ 
-   / _ \  |  _ \(_  _)  |  )  (  __) /    \
-  / ___ \ |  __/ _)(_   | (_/\ | _) |  ()  |
- /_/   \_\|_)   (____)  \____/(____) \____/ 
-    ");
+                ___    ____  ____    __    ____   ____ 
+               / _ \  |  _ \(_  _)  |  )  (  __) /    \
+              / ___ \ |  __/ _)(_   | (_/\ | _) |  ()  |
+             /_/   \_\|_)   (____)  \____/(____) \____/ 
+                ");
             Console.ResetColor();
 
             Console.WriteLine("Running...");
-            Console.WriteLine("version 2.6\n");
+            Console.WriteLine("version 2.7\n");
 
             // --- LEEMOS Y MOSTRAMOS LOS PUERTOS ACTIVOS ---
             Console.ForegroundColor = ConsoleColor.Yellow;
