@@ -18,13 +18,13 @@ internal class Program
     {
         // --- PANTALLA DE CARGA ---
         Console.WriteLine(@"
-            ___    ____  ____    __    ____   ____ 
-           / _ \  |  _ \(_  _)  |  )  (  __) /    \
-          / ___ \ |  __/ _)(_   | (_/\ | _) |  ()  |
-         /_/   \_\|_)   (____)  \____/(____) \____/  
+   ___    ____  ____    __    ____   ____ 
+  / _ \  |  _ \(_  _)  |  )  (  __) /    \
+ / ___ \ |  __/ _)(_   | (_/\ | _) |  ()  |
+/_/   \_\|_)   (____)  \____/(____) \____/  
         ");
         Console.WriteLine("ejecutando...");
-        Console.WriteLine("versión 2.7\n");
+        Console.WriteLine("versión 2.8\n");
         // -------------------------
 
         var builder = WebApplication.CreateBuilder(args);
@@ -102,6 +102,9 @@ internal class Program
 
         //Reporte de ventas y producto
         builder.Services.AddScoped<IReportService, ReportService>();
+
+        //Servicio de Egresos y Cuentas por Pagar
+        builder.Services.AddScoped<IExpenseService, ExpenseService>();
 
         //CONFIGURACIÓN DE JWT Y COOKIES
         builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -286,15 +289,15 @@ internal class Program
 
             Console.ForegroundColor = ConsoleColor.Cyan; // Un poco de color para la terminal
             Console.WriteLine(@"
-                ___    ____  ____    __    ____   ____ 
-               / _ \  |  _ \(_  _)  |  )  (  __) /    \
-              / ___ \ |  __/ _)(_   | (_/\ | _) |  ()  |
-             /_/   \_\|_)   (____)  \____/(____) \____/ 
+       ___    ____  ____    __    ____   ____ 
+      / _ \  |  _ \(_  _)  |  )  (  __) /    \
+     / ___ \ |  __/ _)(_   | (_/\ | _) |  ()  |
+    /_/   \_\|_)   (____)  \____/(____) \____/  
                 ");
             Console.ResetColor();
 
             Console.WriteLine("Running...");
-            Console.WriteLine("version 2.7\n");
+            Console.WriteLine("version 2.8\n");
 
             // --- LEEMOS Y MOSTRAMOS LOS PUERTOS ACTIVOS ---
             Console.ForegroundColor = ConsoleColor.Yellow;

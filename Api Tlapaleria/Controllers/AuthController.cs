@@ -25,7 +25,10 @@ namespace Api_Tlapaleria.Controllers
                 return Unauthorized(ApiResponse<object>.Error("Usuario o contraseña incorrectos (o cuenta inactiva)"));
             }
 
-            // Exponemos AMBOS tokens en el JSON
+            // --- MAGIA AQUÍ: Guardamos los tokens en las cookies HttpOnly ---
+            SetTokenCookies(tokens.Value.AccessToken, tokens.Value.RefreshToken);
+
+            // Exponemos AMBOS tokens en el JSON (útil para clientes que no usan cookies, como Postman o Tauri puro)
             var datosRespuesta = new
             {
                 usuario = loginDto.UsuarioOCorreo,
@@ -39,17 +42,23 @@ namespace Api_Tlapaleria.Controllers
         [HttpPost("refresh")]
         public async Task<ActionResult<ApiResponse<object>>> Refresh([FromBody] RefreshRequestDto request)
         {
-            if (string.IsNullOrEmpty(request.RefreshToken))
+            // Intentamos leer el token del Body, si no viene, lo buscamos en la cookie HttpOnly
+            string refreshToken = request?.RefreshToken ?? Request.Cookies["refresh_token"];
+
+            if (string.IsNullOrEmpty(refreshToken))
             {
                 return Unauthorized(ApiResponse<object>.Error("No hay sesión activa para renovar"));
             }
 
-            var newTokens = await _authService.RefreshSessionAsync(request.RefreshToken);
+            var newTokens = await _authService.RefreshSessionAsync(refreshToken);
 
             if (newTokens == null)
             {
                 return Unauthorized(ApiResponse<object>.Error("La sesión ha expirado por completo. Vuelve a iniciar sesión."));
             }
+
+            // --- MAGIA AQUÍ: Renovamos las cookies con los nuevos tokens ---
+            SetTokenCookies(newTokens.Value.AccessToken, newTokens.Value.RefreshToken);
 
             // Devolvemos los tokens renovados
             var datosRespuesta = new
@@ -64,24 +73,28 @@ namespace Api_Tlapaleria.Controllers
         [HttpPost("logout")]
         public async Task<ActionResult<ApiResponse<object>>> Logout([FromBody] RefreshRequestDto request)
         {
-            if (string.IsNullOrEmpty(request.RefreshToken))
+            // Intentamos leer el token del Body o de la cookie
+            string refreshToken = request?.RefreshToken ?? Request.Cookies["refresh_token"];
+
+            if (!string.IsNullOrEmpty(refreshToken))
             {
-                return BadRequest(ApiResponse<object>.Error("Refresh token ausente"));
+                await _authService.LogoutAsync(refreshToken);
             }
 
-            await _authService.LogoutAsync(request.RefreshToken);
+            // --- MAGIA AQUÍ: Borramos las cookies para cerrar la sesión en el navegador/Swagger ---
+            Response.Cookies.Delete("access_token");
+            Response.Cookies.Delete("refresh_token");
 
             return Ok(ApiResponse<object>.Exito(null, "Sesión cerrada correctamente"));
         }
 
-        // Método auxiliar para no repetir código al configurar cookies
-        // No se usa por el momento ya que nuestra propia app admisnitra las cookies no el navegador 
+        // Método auxiliar para configurar cookies
         private void SetTokenCookies(string accessToken, string refreshToken)
         {
             var cookieOptions = new CookieOptions
             {
                 HttpOnly = true,
-                Secure = true, // Cámbialo a true en Producción (HTTPS)
+                Secure = true, // Cámbialo a false si haces pruebas locales en HTTP, sino Swagger no las guardará
                 SameSite = SameSiteMode.None,
                 Expires = DateTime.Now.AddMinutes(60) // Tiempo de vida de la cookie del JWT
             };
@@ -89,7 +102,7 @@ namespace Api_Tlapaleria.Controllers
             var refreshCookieOptions = new CookieOptions
             {
                 HttpOnly = true,
-                Secure = true, // Cámbialo a true en Producción (HTTPS)
+                Secure = true, // Cámbialo a false si haces pruebas locales en HTTP
                 SameSite = SameSiteMode.None,
                 Expires = DateTime.Now.AddDays(7) // Tiempo de vida del Refresh Token (debe coincidir con la BD)
             };

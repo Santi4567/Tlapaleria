@@ -24,6 +24,15 @@ namespace Api_Tlapaleria.Data
         public DbSet<PresentationPriceHistory> PresentationPriceHistories { get; set; }// <-- Modelo de la tabla de PresentationPriceHistory
 
         public DbSet<UserSession> UserSessions { get; set; }   // <-- Modelo de la tabla Usersession
+
+        // --- MÓDULO DE EGRESOS ---
+        public DbSet<ExpenseCategory> ExpenseCategories { get; set; }
+        public DbSet<AccountsPayable> AccountsPayables { get; set; }
+        public DbSet<PaymentSchedule> PaymentSchedules { get; set; }
+        public DbSet<Expense> Expenses { get; set; }
+        public DbSet<PaymentReminder> PaymentReminders { get; set; }
+        // --- MÓDULO DE EGRESOS ---
+
         protected override void OnModelCreating(ModelBuilder modelBuilder) // <--- Configuracion necesaria para mostrar bien los permisos de los usuarios 
         {
             base.OnModelCreating(modelBuilder);
