@@ -51,7 +51,6 @@ namespace Api_Tlapaleria.Services
                     Brand = datos.Brand,
                     Location = datos.Location,
                     SupplierId = datos.SupplierId,
-                    SupplierPrice = datos.SupplierPrice,
                     ProfitMargin = datos.ProfitMargin,
                     UnitOfMeasure = datos.UnitOfMeasure,
                     AllowFractions = datos.AllowFractions,
@@ -74,6 +73,7 @@ namespace Api_Tlapaleria.Services
                         Name = presDto.Name,
                         Code = presDto.Code,
                         Barcode = presDto.Barcode,
+                        SupplierPrice = presDto.SupplierPrice,
                         Price = presDto.Price,
                         StockFactor = presDto.StockFactor,
                         IsActive = true
@@ -85,29 +85,27 @@ namespace Api_Tlapaleria.Services
                 // <-- AQUÍ estaba el "await transaction.CommitAsync();" que sobraba. Se quitó.
                 //     La transacción se queda ABIERTA hasta que también se guarde el historial.
 
-                // 5. Historial del Costo del Proveedor
-                var historialCosto = new ProductSupplierPriceHistory
-                {
-                    ProductId = nuevoProducto.Id,
-                    OldSupplierPrice = 0,
-                    NewSupplierPrice = datos.SupplierPrice,
-                    UserId = userIdToken
-                };
-                _context.ProductSupplierPriceHistories.Add(historialCosto);
-
-                // 6. Historial de Precios por CADA presentación creada
+                // 5. Historial de Precio y Costo por CADA presentación creada
                 // nuevoProducto.Presentations ya trae los Ids porque EF los generó en el SaveChangesAsync de arriba
                 foreach (var presNueva in nuevoProducto.Presentations)
                 {
-                    var historialPrecio = new PresentationPriceHistory
+                    _context.PresentationPriceHistories.Add(new PresentationPriceHistory
                     {
                         PresentationId = presNueva.Id,
                         ProductId = nuevoProducto.Id,
                         OldPrice = 0,
                         NewPrice = presNueva.Price,
                         UserId = userIdToken
-                    };
-                    _context.PresentationPriceHistories.Add(historialPrecio);
+                    });
+
+                    _context.PresentationSupplierPriceHistories.Add(new PresentationSupplierPriceHistory
+                    {
+                        PresentationId = presNueva.Id,
+                        ProductId = nuevoProducto.Id,
+                        OldSupplierPrice = 0,
+                        NewSupplierPrice = presNueva.SupplierPrice,
+                        UserId = userIdToken
+                    });
                 }
 
                 await _context.SaveChangesAsync();
@@ -224,9 +222,6 @@ namespace Api_Tlapaleria.Services
                 if (!existeProveedor)
                     throw new Exception("El proveedor seleccionado no existe o está inactivo.");
 
-                // --- CAPTURAMOS EL COSTO VIEJO ANTES DE PISARLO ---
-                decimal costoAnterior = productoExistente.SupplierPrice;
-
                 // --- ACTUALIZAMOS DATOS DEL PADRE ---
                 productoExistente.InternalCode = datos.InternalCode;
                 productoExistente.Barcode = datos.Barcode;
@@ -235,7 +230,6 @@ namespace Api_Tlapaleria.Services
                 productoExistente.Brand = datos.Brand;
                 productoExistente.Location = datos.Location;
                 productoExistente.SupplierId = datos.SupplierId;
-                productoExistente.SupplierPrice = datos.SupplierPrice;
                 productoExistente.ProfitMargin = datos.ProfitMargin;
                 productoExistente.UnitOfMeasure = datos.UnitOfMeasure;
                 productoExistente.AllowFractions = datos.AllowFractions;
@@ -244,27 +238,19 @@ namespace Api_Tlapaleria.Services
                 productoExistente.NextExpirationDate = datos.NextExpirationDate;
                 // El stock NO se toca aquí.
 
-                // --- SI CAMBIÓ EL COSTO, GUARDAMOS SU HISTORIAL ---
-                if (costoAnterior != datos.SupplierPrice)
-                {
-                    _context.ProductSupplierPriceHistories.Add(new ProductSupplierPriceHistory
-                    {
-                        ProductId = productoExistente.Id,
-                        OldSupplierPrice = costoAnterior,
-                        NewSupplierPrice = datos.SupplierPrice,
-                        UserId = userIdToken
-                    });
-                }
-
                 // --- MAGIA DE LOS HIJOS (Presentaciones) ---
 
-                // A. Eliminar las que están en BD pero no en el DTO
+                // A. Desactivar (soft-delete) las que están en BD pero ya no vienen en el DTO
+                // NUNCA se eliminan físicamente: ya tienen historial de precio/costo y posiblemente ventas asociadas
                 var idsEnDto = datos.Presentations.Where(p => p.Id.HasValue).Select(p => p.Id.Value).ToList();
-                var presentacionesAEliminar = productoExistente.Presentations
-                    .Where(p => !idsEnDto.Contains(p.Id))
+                var presentacionesADesactivar = productoExistente.Presentations
+                    .Where(p => !idsEnDto.Contains(p.Id) && p.IsActive)
                     .ToList();
 
-                _context.ProductPresentations.RemoveRange(presentacionesAEliminar);
+                foreach (var presentacion in presentacionesADesactivar)
+                {
+                    presentacion.IsActive = false;
+                }
 
                 // B. Actualizar existentes y preparar las nuevas
                 var presentacionesNuevas = new List<ProductPresentation>();
@@ -277,14 +263,16 @@ namespace Api_Tlapaleria.Services
                         if (presExistente != null)
                         {
                             decimal precioAnterior = presExistente.Price;
+                            decimal costoAnterior = presExistente.SupplierPrice; // <-- NUEVO
 
                             presExistente.Name = presDto.Name;
                             presExistente.Code = presDto.Code;
                             presExistente.Barcode = presDto.Barcode;
                             presExistente.Price = presDto.Price;
+                            presExistente.SupplierPrice = presDto.SupplierPrice; // <-- NUEVO
                             presExistente.StockFactor = presDto.StockFactor;
+                            presExistente.IsActive = true; //
 
-                            // Si cambió el precio público de ESTA presentación, va su propio historial
                             if (precioAnterior != presDto.Price)
                             {
                                 _context.PresentationPriceHistories.Add(new PresentationPriceHistory
@@ -293,6 +281,19 @@ namespace Api_Tlapaleria.Services
                                     ProductId = productoExistente.Id,
                                     OldPrice = precioAnterior,
                                     NewPrice = presDto.Price,
+                                    UserId = userIdToken
+                                });
+                            }
+
+                            // --- NUEVO: mismo patrón para el costo ---
+                            if (costoAnterior != presDto.SupplierPrice)
+                            {
+                                _context.PresentationSupplierPriceHistories.Add(new PresentationSupplierPriceHistory
+                                {
+                                    PresentationId = presExistente.Id,
+                                    ProductId = productoExistente.Id,
+                                    OldSupplierPrice = costoAnterior,
+                                    NewSupplierPrice = presDto.SupplierPrice,
                                     UserId = userIdToken
                                 });
                             }
@@ -305,6 +306,7 @@ namespace Api_Tlapaleria.Services
                             Name = presDto.Name,
                             Code = presDto.Code,
                             Barcode = presDto.Barcode,
+                            SupplierPrice = presDto.SupplierPrice,
                             Price = presDto.Price,
                             StockFactor = presDto.StockFactor,
                             IsActive = true
@@ -325,6 +327,15 @@ namespace Api_Tlapaleria.Services
                         ProductId = productoExistente.Id,
                         OldPrice = 0,
                         NewPrice = nueva.Price,
+                        UserId = userIdToken
+                    });
+
+                    _context.PresentationSupplierPriceHistories.Add(new PresentationSupplierPriceHistory
+                    {
+                        PresentationId = nueva.Id,
+                        ProductId = productoExistente.Id,
+                        OldSupplierPrice = 0,
+                        NewSupplierPrice = nueva.SupplierPrice,
                         UserId = userIdToken
                     });
                 }

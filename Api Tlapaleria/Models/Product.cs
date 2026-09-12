@@ -30,9 +30,6 @@ namespace Api_Tlapaleria.Models
         [ForeignKey("SupplierId")]
         public Supplier? Supplier { get; set; }
 
-        [Column(TypeName = "decimal(10,2)")]
-        public decimal SupplierPrice { get; set; } // Costo
-
         // --- NUEVO CAMPO ---
         [Column(TypeName = "decimal(5,2)")]
         public decimal? ProfitMargin { get; set; } // Puede ser nulo

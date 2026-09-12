@@ -6,8 +6,11 @@
         public string DateLabel { get; set; } = string.Empty;
         public int SalesCount { get; set; }
         public decimal NetAmount { get; set; }
+
+        public decimal RealProfitAmount { get; set; }
     }
 
+    // El objeto final que el endpoint devolverá
     // El objeto final que el endpoint devolverá
     public class FinancialReportDto
     {
@@ -15,6 +18,10 @@
         public decimal GrossSalesAmount { get; set; }
         public decimal TotalRefundedAmount { get; set; }
         public decimal NetSalesAmount { get; set; }
+
+        // --- Ganancia real (ventas netas - costo proveedor) ---
+        public decimal CostOfGoodsSold { get; set; }
+        public decimal RealProfitAmount { get; set; }
 
         public List<ChartDataPointDto> ChartData { get; set; } = new List<ChartDataPointDto>();
     }
@@ -37,8 +44,11 @@
     public class PriceHistoryRowDto
     {
         public DateTime Date { get; set; }
-        public decimal? SupplierPrice { get; set; }
+
         public Dictionary<int, decimal?> PresentationPrices { get; set; } = new(); // key: PresentationId
+
+        // --- NUEVO ---
+        public Dictionary<int, decimal?> PresentationSupplierPrices { get; set; } = new(); // key: PresentationId
     }
 
     // -- FIN de  Reporte de precios para los productos ---

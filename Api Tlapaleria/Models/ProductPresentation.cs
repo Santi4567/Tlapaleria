@@ -23,6 +23,9 @@ namespace Api_Tlapaleria.Models
         public string? Barcode { get; set; } // <--- Agrega el ?
 
         public decimal Price { get; set; }
+
+        [Column(TypeName = "decimal(10,2)")]
+        public decimal SupplierPrice { get; set; }
         public decimal StockFactor { get; set; }
 
         public bool IsActive { get; set; } = true;

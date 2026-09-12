@@ -74,6 +74,7 @@ namespace Api_Tlapaleria.Services
                     }
 
                     // 3. ARMAMOS LA LIBRETA (Ticket)
+
                     var detalle = new SaleDetail
                     {
                         ProductId = presentacion.Product.Id,
@@ -83,7 +84,9 @@ namespace Api_Tlapaleria.Services
                         Quantity = item.Quantity,
                         StockFactorApplied = presentacion.StockFactor,
                         UnitPrice = presentacion.Price,
-                        Subtotal = Math.Round(item.Quantity * presentacion.Price, 2, MidpointRounding.AwayFromZero)
+                        Subtotal = Math.Round(item.Quantity * presentacion.Price, 2, MidpointRounding.AwayFromZero),
+                        SupplierPriceAtSale = presentacion.SupplierPrice, // <-- directo, sin fórmula
+                        SupplierCostSubtotal = Math.Round(item.Quantity * presentacion.SupplierPrice, 2, MidpointRounding.AwayFromZero)
                     };
 
                     venta.TotalAmount += detalle.Subtotal;

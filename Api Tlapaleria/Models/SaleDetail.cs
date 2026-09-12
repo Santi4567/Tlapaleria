@@ -51,6 +51,15 @@ namespace Api_Tlapaleria.Models
         [Column(TypeName = "decimal(10,2)")]
         public decimal Subtotal { get; set; }
 
+        // --- COSTO (Snapshot para ganancia real) ---
+        [Required]
+        [Column(TypeName = "decimal(10,2)")]
+        public decimal SupplierPriceAtSale { get; set; } // Costo congelado por unidad de presentación
+
+        [Required]
+        [Column(TypeName = "decimal(10,2)")]
+        public decimal SupplierCostSubtotal { get; set; } // Quantity * SupplierPriceAtSale
+
         // --- COLUMNAS PARA DEVOLUCIONES PARCIALES ---
 
         [Required]

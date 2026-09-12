@@ -39,6 +39,19 @@ namespace Api_Tlapaleria.Services
             var grossAmount = await salesQuery.SumAsync(s => (decimal?)s.TotalAmount) ?? 0m;
             var returnsAmount = await returnsQuery.SumAsync(r => (decimal?)r.TotalRefunded) ?? 0m;
 
+            // --- NUEVO: Costo total de lo vendido (todas las líneas de las ventas del rango) ---
+            var costOfGoodsSold = await salesQuery
+                .SelectMany(s => s.Details)
+                .SumAsync(d => (decimal?)d.SupplierCostSubtotal) ?? 0m;
+
+            // --- NUEVO: Costo de lo devuelto (usando el ancla SaleDetailId) ---
+            var costOfReturnedGoods = await _context.ReturnDetails
+                .Where(rd => rd.Return!.Sale!.IsActive && returnsQuery.Select(r => r.Id).Contains(rd.ReturnId))
+                .SumAsync(rd => (decimal?)(rd.QuantityReturned * rd.SaleDetail!.SupplierPriceAtSale)) ?? 0m;
+
+            var netCost = costOfGoodsSold - costOfReturnedGoods;
+            var realProfit = (grossAmount - returnsAmount) - netCost;
+
             // 4. Obtener datos agrupados por día para la gráfica
             var salesByDate = await salesQuery
                 .GroupBy(s => s.CreatedAt.Date)
@@ -91,10 +104,13 @@ namespace Api_Tlapaleria.Services
                 GrossSalesAmount = grossAmount,
                 TotalRefundedAmount = returnsAmount,
                 NetSalesAmount = grossAmount - returnsAmount,
+                CostOfGoodsSold = netCost,           
+                RealProfitAmount = realProfit,       
                 ChartData = chartData
             };
         }
 
+        // -- Reporte de precios para los productos 
         // -- Reporte de precios para los productos 
         public async Task<ProductPriceHistoryDto> GetPriceHistoryAsync(int productId)
         {
@@ -109,46 +125,46 @@ namespace Api_Tlapaleria.Services
             if (!producto.Presentations.Any())
                 throw new Exception("Este producto no tiene presentaciones registradas.");
 
-            // 2. Historial de costo (proveedor) - a nivel Producto, uno solo
-            var eventosCosto = await _context.ProductSupplierPriceHistories
-                .Where(h => h.ProductId == productId)
-                .OrderBy(h => h.CreatedAt)
-                .Select(h => new { h.CreatedAt, Valor = (decimal?)h.NewSupplierPrice })
-                .ToListAsync();
-
-            // 3. Historial de precio público de TODAS las presentaciones de este producto, en una sola consulta
             var idsPresentaciones = producto.Presentations.Select(p => p.Id).ToList();
 
+            // 2. Historial de PRECIO de venta, de todas las presentaciones, en una sola consulta
             var eventosPrecios = await _context.PresentationPriceHistories
                 .Where(h => idsPresentaciones.Contains(h.PresentationId))
                 .OrderBy(h => h.CreatedAt)
                 .Select(h => new { h.CreatedAt, h.PresentationId, Valor = (decimal?)h.NewPrice })
                 .ToListAsync();
 
-            // 4. Unimos todo en una sola línea de tiempo. PresentationId = null identifica un evento de costo
-            var timeline = new List<(DateTime Fecha, int? PresentationId, decimal? Valor)>();
-            timeline.AddRange(eventosCosto.Select(e => (e.CreatedAt, (int?)null, e.Valor)));
-            timeline.AddRange(eventosPrecios.Select(e => (e.CreatedAt, (int?)e.PresentationId, e.Valor)));
-            timeline = timeline.OrderBy(e => e.Fecha).ToList();
+            // 3. Historial de COSTO de proveedor, de todas las presentaciones, en una sola consulta
+            var eventosCosto = await _context.PresentationSupplierPriceHistories
+                .Where(h => idsPresentaciones.Contains(h.PresentationId))
+                .OrderBy(h => h.CreatedAt)
+                .Select(h => new { h.CreatedAt, h.PresentationId, Valor = (decimal?)h.NewSupplierPrice })
+                .ToListAsync();
 
-            // 5. Forward-fill: arrastramos el último valor conocido de cada columna
-            decimal? ultimoCosto = null;
+            // 4. Unimos ambos historiales en una sola línea de tiempo, ya no hace falta distinguir con PresentationId = null
+            //    porque ahora AMBOS eventos (precio y costo) siempre traen su PresentationId
+            var timelinePrecios = eventosPrecios.Select(e => (e.CreatedAt, e.PresentationId, EsCosto: false, e.Valor));
+            var timelineCostos = eventosCosto.Select(e => (e.CreatedAt, e.PresentationId, EsCosto: true, e.Valor));
+            var timeline = timelinePrecios.Concat(timelineCostos).OrderBy(e => e.CreatedAt).ToList();
+
+            // 5. Forward-fill: arrastramos el último valor conocido de PRECIO y de COSTO, por cada presentación
             var ultimoPrecioPorPresentacion = idsPresentaciones.ToDictionary(id => id, id => (decimal?)null);
+            var ultimoCostoPorPresentacion = idsPresentaciones.ToDictionary(id => id, id => (decimal?)null);
 
             var filas = new List<PriceHistoryRowDto>();
 
             foreach (var evento in timeline)
             {
-                if (evento.PresentationId == null)
-                    ultimoCosto = evento.Valor;
+                if (evento.EsCosto)
+                    ultimoCostoPorPresentacion[evento.PresentationId] = evento.Valor;
                 else
-                    ultimoPrecioPorPresentacion[evento.PresentationId.Value] = evento.Valor;
+                    ultimoPrecioPorPresentacion[evento.PresentationId] = evento.Valor;
 
                 filas.Add(new PriceHistoryRowDto
                 {
-                    Date = evento.Fecha,
-                    SupplierPrice = ultimoCosto,
-                    PresentationPrices = new Dictionary<int, decimal?>(ultimoPrecioPorPresentacion) // <-- copia, no referencia
+                    Date = evento.CreatedAt,
+                    PresentationPrices = new Dictionary<int, decimal?>(ultimoPrecioPorPresentacion), // copia, no referencia
+                    PresentationSupplierPrices = new Dictionary<int, decimal?>(ultimoCostoPorPresentacion) // copia, no referencia
                 });
             }
 

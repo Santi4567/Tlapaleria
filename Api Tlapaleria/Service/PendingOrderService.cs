@@ -499,14 +499,11 @@ namespace Api_Tlapaleria.Services
                         }
                     }
 
-                    // --- 2.1 ACTUALIZAR DATOS DEL PADRE ---
-                    if (datos.NewSupplierPrice.HasValue)
-                        pedido.Product.SupplierPrice = datos.NewSupplierPrice.Value;
-
+                    // --- 2.1 ACTUALIZAR MARGEN DE GANANCIA (sigue siendo del padre) ---
                     if (datos.NewProfitMargin.HasValue)
                         pedido.Product.ProfitMargin = datos.NewProfitMargin.Value;
 
-                    // --- 2.2 ACTUALIZAR PRECIOS DE VENTA (Hijos) ---
+                    // --- 2.2 ACTUALIZAR PRECIOS DE VENTA Y COSTO DE PROVEEDOR (Hijos) ---
                     if (datos.PresentationPrices != null && datos.PresentationPrices.Any() && pedido.Product.Presentations != null)
                     {
                         foreach (var actualizacionHijo in datos.PresentationPrices)
@@ -515,7 +512,37 @@ namespace Api_Tlapaleria.Services
 
                             if (presentacion != null && presentacion.IsActive)
                             {
+                                decimal precioAnterior = presentacion.Price;
+                                decimal costoAnterior = presentacion.SupplierPrice;
+
                                 presentacion.Price = actualizacionHijo.NewPrice;
+
+                                if (actualizacionHijo.NewSupplierPrice.HasValue)
+                                    presentacion.SupplierPrice = actualizacionHijo.NewSupplierPrice.Value;
+
+                                if (precioAnterior != presentacion.Price)
+                                {
+                                    _context.PresentationPriceHistories.Add(new PresentationPriceHistory
+                                    {
+                                        PresentationId = presentacion.Id,
+                                        ProductId = pedido.Product.Id,
+                                        OldPrice = precioAnterior,
+                                        NewPrice = presentacion.Price,
+                                        UserId = userId
+                                    });
+                                }
+
+                                if (costoAnterior != presentacion.SupplierPrice)
+                                {
+                                    _context.PresentationSupplierPriceHistories.Add(new PresentationSupplierPriceHistory
+                                    {
+                                        PresentationId = presentacion.Id,
+                                        ProductId = pedido.Product.Id,
+                                        OldSupplierPrice = costoAnterior,
+                                        NewSupplierPrice = presentacion.SupplierPrice,
+                                        UserId = userId
+                                    });
+                                }
                             }
                         }
                     }

@@ -3,11 +3,16 @@ using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Api_Tlapaleria.Models
 {
-    [Table("ProductSupplierPriceHistories")]
-    public class ProductSupplierPriceHistory
+    [Table("PresentationSupplierPriceHistories")]
+    public class PresentationSupplierPriceHistory
     {
         [Key]
         public int Id { get; set; }
+
+        [Required]
+        public int PresentationId { get; set; }
+        [ForeignKey("PresentationId")]
+        public ProductPresentation? Presentation { get; set; }
 
         [Required]
         public int ProductId { get; set; }
@@ -22,6 +27,9 @@ namespace Api_Tlapaleria.Models
 
         [Required]
         public int UserId { get; set; }
+        [ForeignKey("UserId")]
+        public User? User { get; set; }
+
         public DateTime CreatedAt { get; set; } = DateTime.Now;
     }
 }

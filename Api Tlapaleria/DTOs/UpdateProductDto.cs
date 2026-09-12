@@ -15,7 +15,12 @@ namespace Api_Tlapaleria.DTOs
 
         [Required]
         [Range(0.01, double.MaxValue)]
+
         public decimal Price { get; set; }
+
+        [Required]
+        [Range(0, double.MaxValue)]
+        public decimal SupplierPrice { get; set; }
 
         [Required]
         public decimal StockFactor { get; set; }
@@ -36,8 +41,6 @@ namespace Api_Tlapaleria.DTOs
         [Required]
         public int SupplierId { get; set; }
 
-        [Required]
-        public decimal SupplierPrice { get; set; }
         public decimal? ProfitMargin { get; set; }
 
         [Required]

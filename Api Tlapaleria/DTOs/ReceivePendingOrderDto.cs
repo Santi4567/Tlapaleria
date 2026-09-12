@@ -16,7 +16,6 @@ namespace Api_Tlapaleria.DTOs
         public decimal? ReceivedQuantity { get; set; }
 
         // Precios del Padre (pueden venir nulos si no cambiaron)
-        public decimal? NewSupplierPrice { get; set; }
         public decimal? NewProfitMargin { get; set; }
 
         // Precios de los Hijos (Presentaciones)
@@ -30,5 +29,7 @@ namespace Api_Tlapaleria.DTOs
     {
         public int PresentationId { get; set; }
         public decimal NewPrice { get; set; } // El nuevo precio de venta de esta presentación
+
+        public decimal? NewSupplierPrice { get; set; }
     }
 }

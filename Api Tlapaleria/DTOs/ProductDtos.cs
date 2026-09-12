@@ -16,6 +16,10 @@ namespace Api_Tlapaleria.DTOs
         public decimal Price { get; set; } // $45.00
 
         [Required]
+        [Range(0, double.MaxValue, ErrorMessage = "El costo de proveedor no puede ser negativo")]
+        public decimal SupplierPrice { get; set; }
+
+        [Required]
         public decimal StockFactor { get; set; } // 1.0 (cuánto descuenta del padre)
     }
 
@@ -36,9 +40,6 @@ namespace Api_Tlapaleria.DTOs
         // --- Proveedor y Costos ---
         [Required]
         public int SupplierId { get; set; }
-
-        [Required]
-        public decimal SupplierPrice { get; set; } // Costo ($20)
 
         public decimal? ProfitMargin { get; set; } // Ganancia sugerida (30%)
 
