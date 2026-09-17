@@ -94,16 +94,16 @@ namespace Api_Tlapaleria.Controllers
             var cookieOptions = new CookieOptions
             {
                 HttpOnly = true,
-                Secure = true, // Cámbialo a false si haces pruebas locales en HTTP, sino Swagger no las guardará
-                SameSite = SameSiteMode.None,
+                Secure = false, // Cámbialo a false si haces pruebas locales en HTTP, sino Swagger no las guardará
+                SameSite = SameSiteMode.Strict, // Scrit para desarollo None para produccion(opcional)
                 Expires = DateTime.Now.AddMinutes(60) // Tiempo de vida de la cookie del JWT
             };
 
             var refreshCookieOptions = new CookieOptions
             {
                 HttpOnly = true,
-                Secure = true, // Cámbialo a false si haces pruebas locales en HTTP
-                SameSite = SameSiteMode.None,
+                Secure = false, // Cámbialo a false si haces pruebas locales en HTTP
+                SameSite = SameSiteMode.Strict, // Scrit para desarollo None para produccion(opcional)
                 Expires = DateTime.Now.AddDays(7) // Tiempo de vida del Refresh Token (debe coincidir con la BD)
             };
 

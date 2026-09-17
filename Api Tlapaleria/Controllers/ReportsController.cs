@@ -21,27 +21,26 @@ namespace Api_Tlapaleria.Controllers
 
         // -- Reporte financiero de ventas --
         [HttpGet("financial")]
-        [RequierePermiso("view.reports")] 
+        [RequierePermiso("view.reports")]
         public async Task<ActionResult<ApiResponse<FinancialReportDto>>> GetFinancialReport(
             [FromQuery] DateTime? startDate = null,
             [FromQuery] DateTime? endDate = null)
         {
             var report = await _reportService.GetFinancialReportAsync(startDate, endDate);
-
             return Ok(ApiResponse<FinancialReportDto>.Exito(report, "Reporte financiero generado exitosamente."));
         }
 
-        // -- Reporte/Hostorial de Precio de un producto
+        // -- Reporte/Historial de Precio de un producto (o una presentación específica) --
         [HttpGet("{id}/price-history")]
         [RequierePermiso("view.products")]
-        public async Task<ActionResult<ApiResponse<ProductPriceHistoryDto>>> GetPriceHistory(int id)
+        public async Task<ActionResult<ApiResponse<ProductPriceHistoryDto>>> GetPriceHistory(
+            int id,
+            [FromQuery] int? presentationId = null,
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null)
         {
-            var historial = await _reportService.GetPriceHistoryAsync(id);
+            var historial = await _reportService.GetPriceHistoryAsync(id, presentationId, startDate, endDate);
             return Ok(ApiResponse<ProductPriceHistoryDto>.Exito(historial));
         }
     }
-
-
-
-
 }

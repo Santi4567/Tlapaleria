@@ -110,9 +110,8 @@ namespace Api_Tlapaleria.Services
             };
         }
 
-        // -- Reporte de precios para los productos 
-        // -- Reporte de precios para los productos 
-        public async Task<ProductPriceHistoryDto> GetPriceHistoryAsync(int productId)
+        // -- Reporte de precios para los productos (con filtro opcional por presentación y rango de fechas)
+        public async Task<ProductPriceHistoryDto> GetPriceHistoryAsync(int productId, int? presentationId = null, DateTime? startDate = null, DateTime? endDate = null)
         {
             // 1. Validar que el producto exista, con sus presentaciones
             var producto = await _context.Products
@@ -125,35 +124,75 @@ namespace Api_Tlapaleria.Services
             if (!producto.Presentations.Any())
                 throw new Exception("Este producto no tiene presentaciones registradas.");
 
-            var idsPresentaciones = producto.Presentations.Select(p => p.Id).ToList();
+            // 2. Filtrar a una sola presentación si se pidió, o usar todas
+            var idsPresentaciones = presentationId.HasValue
+                ? producto.Presentations.Where(p => p.Id == presentationId.Value).Select(p => p.Id).ToList()
+                : producto.Presentations.Select(p => p.Id).ToList();
 
-            // 2. Historial de PRECIO de venta, de todas las presentaciones, en una sola consulta
+            if (presentationId.HasValue && !idsPresentaciones.Any())
+                throw new Exception($"La presentación con ID {presentationId.Value} no pertenece a este producto.");
+
+            // 3. Rango de fechas: default de 12 meses si no se especifica, con tope máximo de 2 años
+            var startDateEfectivo = startDate ?? DateTime.Now.AddYears(-1);
+            var endDateEfectivo = endDate.HasValue ? endDate.Value.Date.AddDays(1).AddTicks(-1) : (DateTime?)null;
+
+            if (endDateEfectivo.HasValue)
+            {
+                var rangoSolicitado = endDateEfectivo.Value - startDateEfectivo;
+                if (rangoSolicitado.TotalDays > 730)
+                    throw new Exception("El rango de fechas solicitado no puede exceder 2 años. Divide la consulta en periodos más cortos.");
+            }
+
+            // 4. Traemos TODO el historial (precio y costo) de las presentaciones filtradas, sin recortar aún por fecha —
+            //    lo necesitamos completo para poder calcular el "valor inicial" antes del rango
             var eventosPrecios = await _context.PresentationPriceHistories
                 .Where(h => idsPresentaciones.Contains(h.PresentationId))
                 .OrderBy(h => h.CreatedAt)
                 .Select(h => new { h.CreatedAt, h.PresentationId, Valor = (decimal?)h.NewPrice })
                 .ToListAsync();
 
-            // 3. Historial de COSTO de proveedor, de todas las presentaciones, en una sola consulta
             var eventosCosto = await _context.PresentationSupplierPriceHistories
                 .Where(h => idsPresentaciones.Contains(h.PresentationId))
                 .OrderBy(h => h.CreatedAt)
                 .Select(h => new { h.CreatedAt, h.PresentationId, Valor = (decimal?)h.NewSupplierPrice })
                 .ToListAsync();
 
-            // 4. Unimos ambos historiales en una sola línea de tiempo, ya no hace falta distinguir con PresentationId = null
-            //    porque ahora AMBOS eventos (precio y costo) siempre traen su PresentationId
             var timelinePrecios = eventosPrecios.Select(e => (e.CreatedAt, e.PresentationId, EsCosto: false, e.Valor));
             var timelineCostos = eventosCosto.Select(e => (e.CreatedAt, e.PresentationId, EsCosto: true, e.Valor));
-            var timeline = timelinePrecios.Concat(timelineCostos).OrderBy(e => e.CreatedAt).ToList();
+            var timelineCompleto = timelinePrecios.Concat(timelineCostos).OrderBy(e => e.CreatedAt).ToList();
 
-            // 5. Forward-fill: arrastramos el último valor conocido de PRECIO y de COSTO, por cada presentación
+            // 5. Semilla: calculamos el estado ACUMULADO justo antes del rango pedido
             var ultimoPrecioPorPresentacion = idsPresentaciones.ToDictionary(id => id, id => (decimal?)null);
             var ultimoCostoPorPresentacion = idsPresentaciones.ToDictionary(id => id, id => (decimal?)null);
 
+            var eventosAntesDelRango = timelineCompleto.Where(e => e.CreatedAt < startDateEfectivo);
+
+            foreach (var evento in eventosAntesDelRango)
+            {
+                if (evento.EsCosto)
+                    ultimoCostoPorPresentacion[evento.PresentationId] = evento.Valor;
+                else
+                    ultimoPrecioPorPresentacion[evento.PresentationId] = evento.Valor;
+            }
+
+            // 6. Filtramos ahora sí el timeline al rango pedido
+            var timelineEnRango = timelineCompleto.Where(e =>
+                e.CreatedAt >= startDateEfectivo &&
+                (!endDateEfectivo.HasValue || e.CreatedAt <= endDateEfectivo.Value)
+            ).ToList();
+
             var filas = new List<PriceHistoryRowDto>();
 
-            foreach (var evento in timeline)
+            // 7. Fila "semilla" en startDateEfectivo mostrando el estado heredado, aunque no haya cambio exacto ese día
+            filas.Add(new PriceHistoryRowDto
+            {
+                Date = startDateEfectivo,
+                PresentationPrices = new Dictionary<int, decimal?>(ultimoPrecioPorPresentacion),
+                PresentationSupplierPrices = new Dictionary<int, decimal?>(ultimoCostoPorPresentacion)
+            });
+
+            // 8. Forward-fill normal, solo con los eventos dentro del rango
+            foreach (var evento in timelineEnRango)
             {
                 if (evento.EsCosto)
                     ultimoCostoPorPresentacion[evento.PresentationId] = evento.Valor;
@@ -163,8 +202,8 @@ namespace Api_Tlapaleria.Services
                 filas.Add(new PriceHistoryRowDto
                 {
                     Date = evento.CreatedAt,
-                    PresentationPrices = new Dictionary<int, decimal?>(ultimoPrecioPorPresentacion), // copia, no referencia
-                    PresentationSupplierPrices = new Dictionary<int, decimal?>(ultimoCostoPorPresentacion) // copia, no referencia
+                    PresentationPrices = new Dictionary<int, decimal?>(ultimoPrecioPorPresentacion),
+                    PresentationSupplierPrices = new Dictionary<int, decimal?>(ultimoCostoPorPresentacion)
                 });
             }
 
@@ -173,6 +212,7 @@ namespace Api_Tlapaleria.Services
                 ProductId = producto.Id,
                 ProductName = producto.Name,
                 Presentations = producto.Presentations
+                    .Where(p => idsPresentaciones.Contains(p.Id))
                     .Select(p => new PresentationInfoDto { PresentationId = p.Id, Name = p.Name })
                     .ToList(),
                 History = filas

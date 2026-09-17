@@ -24,7 +24,7 @@ internal class Program
 /_/   \_\|_)   (____)  \____/(____) \____/  
         ");
         Console.WriteLine("ejecutando...");
-        Console.WriteLine("versión 2.9\n");
+        Console.WriteLine("versión 3.0\n");
         // -------------------------
 
         var builder = WebApplication.CreateBuilder(args);
@@ -245,7 +245,7 @@ internal class Program
                     factory: partition => new FixedWindowRateLimiterOptions
                     {
                         AutoReplenishment = true,
-                        PermitLimit = 60, // Límite: 60 peticiones...
+                        PermitLimit = 100, // Límite: 100 peticiones...
                         Window = TimeSpan.FromMinutes(1) // ... por cada 1 minuto.
                     });
             });
@@ -297,7 +297,7 @@ internal class Program
             Console.ResetColor();
 
             Console.WriteLine("Running...");
-            Console.WriteLine("version 2.9\n");
+            Console.WriteLine("version 3.0\n");
 
             // --- LEEMOS Y MOSTRAMOS LOS PUERTOS ACTIVOS ---
             Console.ForegroundColor = ConsoleColor.Yellow;
