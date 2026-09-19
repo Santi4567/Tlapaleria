@@ -44,11 +44,9 @@
     public class PriceHistoryRowDto
     {
         public DateTime Date { get; set; }
-
-        public Dictionary<int, decimal?> PresentationPrices { get; set; } = new(); // key: PresentationId
-
-        // --- NUEVO ---
-        public Dictionary<int, decimal?> PresentationSupplierPrices { get; set; } = new(); // key: PresentationId
+        public Dictionary<int, decimal?> PresentationPrices { get; set; } = new();
+        public Dictionary<int, decimal?> PresentationSupplierPrices { get; set; } = new();
+        public bool Actual { get; set; } = false; // true solo en el nodo sintético de "hoy" (Caso 1)
     }
 
     // -- FIN de  Reporte de precios para los productos ---

@@ -132,19 +132,44 @@ namespace Api_Tlapaleria.Services
             if (presentationId.HasValue && !idsPresentaciones.Any())
                 throw new Exception($"La presentación con ID {presentationId.Value} no pertenece a este producto.");
 
-            // 3. Rango de fechas: default de 12 meses si no se especifica, con tope máximo de 2 años
-            var startDateEfectivo = startDate ?? DateTime.Now.AddYears(-1);
-            var endDateEfectivo = endDate.HasValue ? endDate.Value.Date.AddDays(1).AddTicks(-1) : (DateTime?)null;
+            // --- NUEVO: validación de fechas ---
+            if (endDate.HasValue && !startDate.HasValue)
+                throw new Exception("Si especificas 'endDate', también debes especificar 'startDate'.");
 
-            if (endDateEfectivo.HasValue)
+            bool usoRangoExplicito = startDate.HasValue;
+
+            // --- NUEVO: normalización de orden cronológico, sin importar cuál mandaron primero ---
+            DateTime rangeStart;
+            DateTime? rangeEnd;
+
+            if (usoRangoExplicito)
             {
-                var rangoSolicitado = endDateEfectivo.Value - startDateEfectivo;
-                if (rangoSolicitado.TotalDays > 730)
-                    throw new Exception("El rango de fechas solicitado no puede exceder 2 años. Divide la consulta en periodos más cortos.");
+                if (endDate.HasValue)
+                {
+                    rangeStart = startDate.Value <= endDate.Value ? startDate.Value : endDate.Value;
+                    rangeEnd = startDate.Value <= endDate.Value ? endDate.Value : startDate.Value;
+                }
+                else
+                {
+                    rangeStart = startDate.Value;
+                    rangeEnd = null; // sin límite superior explícito
+                }
+            }
+            else
+            {
+                // Caso 1: sin fechas -> default de últimos 12 meses
+                rangeStart = DateTime.Now.AddYears(-1);
+                rangeEnd = null;
             }
 
-            // 4. Traemos TODO el historial (precio y costo) de las presentaciones filtradas, sin recortar aún por fecha —
-            //    lo necesitamos completo para poder calcular el "valor inicial" antes del rango
+            // Tope de 2 años (usando "ahora" si no hay límite superior explícito)
+            var limiteParaValidar = rangeEnd ?? DateTime.Now;
+            if ((limiteParaValidar - rangeStart).TotalDays > 730)
+                throw new Exception("El rango de fechas solicitado no puede exceder 2 años. Divide la consulta en periodos más cortos.");
+
+            var rangeEndFinDeDia = rangeEnd.HasValue ? rangeEnd.Value.Date.AddDays(1).AddTicks(-1) : (DateTime?)null;
+
+            // 3. Traemos TODO el historial, sin filtrar aún por fecha
             var eventosPrecios = await _context.PresentationPriceHistories
                 .Where(h => idsPresentaciones.Contains(h.PresentationId))
                 .OrderBy(h => h.CreatedAt)
@@ -161,37 +186,53 @@ namespace Api_Tlapaleria.Services
             var timelineCostos = eventosCosto.Select(e => (e.CreatedAt, e.PresentationId, EsCosto: true, e.Valor));
             var timelineCompleto = timelinePrecios.Concat(timelineCostos).OrderBy(e => e.CreatedAt).ToList();
 
-            // 5. Semilla: calculamos el estado ACUMULADO justo antes del rango pedido
+            // 4. Semilla: estado acumulado justo antes de rangeStart
             var ultimoPrecioPorPresentacion = idsPresentaciones.ToDictionary(id => id, id => (decimal?)null);
             var ultimoCostoPorPresentacion = idsPresentaciones.ToDictionary(id => id, id => (decimal?)null);
 
-            var eventosAntesDelRango = timelineCompleto.Where(e => e.CreatedAt < startDateEfectivo);
-
-            foreach (var evento in eventosAntesDelRango)
+            // Si rangeStart es HOY, usamos la tabla viva como fuente de verdad, no el historial
+            bool rangeStartEsHoy = rangeStart.Date == DateTime.Now.Date && !rangeEnd.HasValue;
+            if (rangeStartEsHoy)
             {
-                if (evento.EsCosto)
-                    ultimoCostoPorPresentacion[evento.PresentationId] = evento.Valor;
-                else
-                    ultimoPrecioPorPresentacion[evento.PresentationId] = evento.Valor;
+                foreach (var presId in idsPresentaciones)
+                {
+                    var presentacionViva = producto.Presentations.First(p => p.Id == presId);
+                    ultimoPrecioPorPresentacion[presId] = presentacionViva.Price;
+                    ultimoCostoPorPresentacion[presId] = presentacionViva.SupplierPrice;
+                }
             }
-
-            // 6. Filtramos ahora sí el timeline al rango pedido
-            var timelineEnRango = timelineCompleto.Where(e =>
-                e.CreatedAt >= startDateEfectivo &&
-                (!endDateEfectivo.HasValue || e.CreatedAt <= endDateEfectivo.Value)
-            ).ToList();
+            else
+            {
+                foreach (var evento in timelineCompleto.Where(e => e.CreatedAt <= rangeStart))
+                {
+                    if (evento.EsCosto)
+                        ultimoCostoPorPresentacion[evento.PresentationId] = evento.Valor;
+                    else
+                        ultimoPrecioPorPresentacion[evento.PresentationId] = evento.Valor;
+                }
+            }
 
             var filas = new List<PriceHistoryRowDto>();
 
-            // 7. Fila "semilla" en startDateEfectivo mostrando el estado heredado, aunque no haya cambio exacto ese día
-            filas.Add(new PriceHistoryRowDto
-            {
-                Date = startDateEfectivo,
-                PresentationPrices = new Dictionary<int, decimal?>(ultimoPrecioPorPresentacion),
-                PresentationSupplierPrices = new Dictionary<int, decimal?>(ultimoCostoPorPresentacion)
-            });
+            bool haySemillaReal = ultimoPrecioPorPresentacion.Values.Any(v => v.HasValue)
+                                || ultimoCostoPorPresentacion.Values.Any(v => v.HasValue);
 
-            // 8. Forward-fill normal, solo con los eventos dentro del rango
+            if (haySemillaReal)
+            {
+                filas.Add(new PriceHistoryRowDto
+                {
+                    Date = rangeStart,
+                    PresentationPrices = new Dictionary<int, decimal?>(ultimoPrecioPorPresentacion),
+                    PresentationSupplierPrices = new Dictionary<int, decimal?>(ultimoCostoPorPresentacion)
+                });
+            }
+
+            // 5. Eventos estrictamente después de rangeStart, hasta rangeEnd (si hay límite)
+            var timelineEnRango = timelineCompleto.Where(e =>
+                e.CreatedAt > rangeStart &&
+                (!rangeEndFinDeDia.HasValue || e.CreatedAt <= rangeEndFinDeDia.Value)
+            ).ToList();
+
             foreach (var evento in timelineEnRango)
             {
                 if (evento.EsCosto)
@@ -207,6 +248,54 @@ namespace Api_Tlapaleria.Services
                 });
             }
 
+            // 6. NUEVO: fila de "cierre" en rangeEnd, solo si se pidió un endDate explícito
+            //    y no hay ya un evento real fechado exactamente ese día
+            if (rangeEnd.HasValue)
+            {
+                bool yaHayFilaEseDia = filas.Any(f => f.Date.Date == rangeEnd.Value.Date);
+                if (!yaHayFilaEseDia)
+                {
+                    filas.Add(new PriceHistoryRowDto
+                    {
+                        Date = rangeEnd.Value.Date,
+                        PresentationPrices = new Dictionary<int, decimal?>(ultimoPrecioPorPresentacion),
+                        PresentationSupplierPrices = new Dictionary<int, decimal?>(ultimoCostoPorPresentacion)
+                    });
+                }
+            }
+
+            // 7. Colapsar filas del mismo segundo (evita duplicados por eventos casi simultáneos)
+            var filasFinal = filas
+                .GroupBy(f => new DateTime(f.Date.Year, f.Date.Month, f.Date.Day, f.Date.Hour, f.Date.Minute, f.Date.Second))
+                .Select(g => g.OrderBy(f => f.Date).Last())
+                .OrderBy(f => f.Date)
+                .ToList();
+
+            // 8. NUEVO: Caso 1 (sin rango explícito) -> agregar/anclar el nodo de "hoy" con actual:true
+            if (!usoRangoExplicito)
+            {
+                var filaDeHoy = filasFinal.FirstOrDefault(f => f.Date.Date == DateTime.Now.Date);
+
+                if (filaDeHoy != null)
+                {
+                    filaDeHoy.Actual = true;
+                }
+                else
+                {
+                    var presentacionesFiltradas = producto.Presentations
+                        .Where(p => idsPresentaciones.Contains(p.Id))
+                        .ToList();
+
+                    filasFinal.Add(new PriceHistoryRowDto
+                    {
+                        Date = DateTime.Now,
+                        PresentationPrices = presentacionesFiltradas.ToDictionary(p => p.Id, p => (decimal?)p.Price),
+                        PresentationSupplierPrices = presentacionesFiltradas.ToDictionary(p => p.Id, p => (decimal?)p.SupplierPrice),
+                        Actual = true
+                    });
+                }
+            }
+
             return new ProductPriceHistoryDto
             {
                 ProductId = producto.Id,
@@ -215,7 +304,7 @@ namespace Api_Tlapaleria.Services
                     .Where(p => idsPresentaciones.Contains(p.Id))
                     .Select(p => new PresentationInfoDto { PresentationId = p.Id, Name = p.Name })
                     .ToList(),
-                History = filas
+                History = filasFinal
             };
         }
     }
