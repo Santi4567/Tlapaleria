@@ -24,7 +24,7 @@ internal class Program
 /_/   \_\|_)   (____)  \____/(____) \____/  
         ");
         Console.WriteLine("ejecutando...");
-        Console.WriteLine("versión 3.1\n");
+        Console.WriteLine("versión 3.5\n");
         // -------------------------
 
         var builder = WebApplication.CreateBuilder(args);
@@ -297,7 +297,7 @@ internal class Program
             Console.ResetColor();
 
             Console.WriteLine("Running...");
-            Console.WriteLine("version 3.1\n");
+            Console.WriteLine("version 3.5\n");
 
             // --- LEEMOS Y MOSTRAMOS LOS PUERTOS ACTIVOS ---
             Console.ForegroundColor = ConsoleColor.Yellow;

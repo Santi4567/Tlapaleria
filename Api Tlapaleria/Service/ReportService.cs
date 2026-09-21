@@ -54,21 +54,37 @@ namespace Api_Tlapaleria.Services
 
             // 4. Obtener datos agrupados por día para la gráfica
             var salesByDate = await salesQuery
-                .GroupBy(s => s.CreatedAt.Date)
+                .Select(s => new
+                {
+                    Date = s.CreatedAt.Date,
+                    TotalAmount = s.TotalAmount,
+                    // NUEVO: Extraemos el costo total de los detalles de cada venta
+                    Cost = s.Details.Sum(d => (decimal?)d.SupplierCostSubtotal) ?? 0m
+                })
+                .GroupBy(x => x.Date)
                 .Select(g => new
                 {
                     Date = g.Key,
                     Count = g.Count(),
-                    Gross = g.Sum(s => s.TotalAmount)
+                    Gross = g.Sum(x => x.TotalAmount),
+                    TotalCost = g.Sum(x => x.Cost) // NUEVO: Agrupamos el costo por día
                 })
                 .ToListAsync();
 
             var returnsByDate = await returnsQuery
-                .GroupBy(r => r.CreatedAt.Date)
+                .Select(r => new
+                {
+                    Date = r.CreatedAt.Date,
+                    TotalRefunded = r.TotalRefunded,
+                    // NUEVO: Extraemos el costo de los productos devueltos
+                    ReturnedCost = r.Details.Sum(rd => (decimal?)(rd.QuantityReturned * rd.SaleDetail!.SupplierPriceAtSale)) ?? 0m
+                })
+                .GroupBy(x => x.Date)
                 .Select(g => new
                 {
                     Date = g.Key,
-                    Refunded = g.Sum(r => r.TotalRefunded)
+                    Refunded = g.Sum(x => x.TotalRefunded),
+                    ReturnedCost = g.Sum(x => x.ReturnedCost) // NUEVO: Agrupamos el costo devuelto por día
                 })
                 .ToListAsync();
 
@@ -87,13 +103,22 @@ namespace Api_Tlapaleria.Services
 
                 var dayCount = saleData?.Count ?? 0;
                 var dayGross = saleData?.Gross ?? 0m;
+                var dayCost = saleData?.TotalCost ?? 0m;
+
                 var dayRefund = returnData?.Refunded ?? 0m;
+                var dayReturnedCost = returnData?.ReturnedCost ?? 0m;
+
+                // NUEVO: Cálculos financieros diarios
+                var dayNetSales = dayGross - dayRefund;
+                var dayNetCost = dayCost - dayReturnedCost;
+                var dayRealProfit = dayNetSales - dayNetCost;
 
                 chartData.Add(new ChartDataPointDto
                 {
                     DateLabel = date.ToString("yyyy-MM-dd"),
                     SalesCount = dayCount,
-                    NetAmount = dayGross - dayRefund
+                    NetAmount = dayNetSales,
+                    RealProfitAmount = dayRealProfit // <-- ASIGNACIÓN CORREGIDA
                 });
             }
 
