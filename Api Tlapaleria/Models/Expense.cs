@@ -59,6 +59,16 @@ namespace Api_Tlapaleria.Models
         [ForeignKey("UserId")]
         public User? User { get; set; }
 
+        // Auditoría de anulación: quién y cuándo anuló este egreso.
+        // Se llenan únicamente en el momento de la anulación (is_active -> false).
+        [Column("cancelled_by_user_id")]
+        public int? CancelledByUserId { get; set; }
+        [ForeignKey("CancelledByUserId")]
+        public User? CancelledByUser { get; set; }
+
+        [Column("cancelled_at")]
+        public DateTime? CancelledAt { get; set; }
+
         [Column("is_active")]
         public bool IsActive { get; set; } = true;
 

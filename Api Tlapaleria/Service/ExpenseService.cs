@@ -55,8 +55,12 @@ namespace Api_Tlapaleria.Services
                     if (diasTotales <= 0)
                         throw new Exception("La fecha límite debe ser en el futuro.");
 
-                    // Calcular cantidad de cuotas (Redondeando hacia arriba)
-                    int numeroDeCuotas = (int)Math.Ceiling((double)diasTotales / dto.PaymentFrequencyDays.Value);
+                    // Calcular cantidad de cuotas. Usamos división entera (floor), no
+                    // Ceiling: con Ceiling, una deuda a 30 días pagada cada 7 generaría
+                    // 5 cuotas cuya última fecha cae 5 días DESPUÉS del límite real del
+                    // proveedor. Con floor, 30/7 = 4 cuotas, y anclamos la última
+                    // exactamente al DueDate para que nunca se pase de la fecha límite.
+                    int numeroDeCuotas = Math.Max(1, diasTotales / dto.PaymentFrequencyDays.Value);
 
                     // Calcular el monto sugerido por cuota
                     decimal montoSugerido = Math.Round(dto.TotalAmount / numeroDeCuotas, 2);
@@ -66,7 +70,10 @@ namespace Api_Tlapaleria.Services
 
                     for (int i = 1; i <= numeroDeCuotas; i++)
                     {
-                        fechaCuotaActual = fechaCuotaActual.AddDays(dto.PaymentFrequencyDays.Value);
+                        // La última cuota siempre cae en el DueDate real, nunca después
+                        fechaCuotaActual = (i == numeroDeCuotas)
+                            ? dto.DueDate.Value.Date
+                            : fechaCuotaActual.AddDays(dto.PaymentFrequencyDays.Value);
 
                         // Ajustar la última cuota para que no haya diferencias por el redondeo de centavos
                         decimal montoFinal = (i == numeroDeCuotas) ? (dto.TotalAmount - sumaParcial) : montoSugerido;
@@ -82,13 +89,15 @@ namespace Api_Tlapaleria.Services
                         };
 
                         _context.PaymentSchedules.Add(cuota);
-                        await _context.SaveChangesAsync();
 
-                        // 4. Generar el Recordatorio Automático (Ej: avisar 1 día antes)
+                        // Generar el Recordatorio Automático (Ej: avisar 1 día antes).
+                        // Usamos la navegación (Schedule = cuota) en vez de ScheduleId = cuota.Id
+                        // para no depender de un SaveChanges intermedio: EF Core resuelve el
+                        // FK solo cuando se guarden ambas entidades juntas al final.
                         var recordatorio = new PaymentReminder
                         {
-                            ScheduleId = cuota.Id,
-                            RemindAt = cuota.DueDate.AddDays(-1), // Aviso un día antes
+                            Schedule = cuota,
+                            RemindAt = fechaCuotaActual.AddDays(-1), // Aviso un día antes
                             Channel = ReminderChannel.InApp.ToString()
                         };
                         _context.PaymentReminders.Add(recordatorio);
@@ -122,6 +131,26 @@ namespace Api_Tlapaleria.Services
                 if (!existeProveedor) throw new Exception("El proveedor no existe.");
             }
 
+            // Si el egreso trae accounts_payable_id, validar que exista y esté activa
+            if (dto.AccountsPayableId.HasValue)
+            {
+                bool existeDeuda = await _context.AccountsPayables.AnyAsync(a => a.Id == dto.AccountsPayableId.Value && a.IsActive);
+                if (!existeDeuda) throw new Exception("La cuenta por pagar no existe o está inactiva.");
+            }
+
+            // Si además trae schedule_id, validar que esa cuota pertenezca
+            // exactamente a esa cuenta por pagar (evita marcar como Pagado
+            // una cuota de una deuda distinta a la que se está abonando)
+            if (dto.ScheduleId.HasValue)
+            {
+                bool cuotaCoincide = await _context.PaymentSchedules.AnyAsync(s =>
+                    s.Id == dto.ScheduleId.Value &&
+                    (!dto.AccountsPayableId.HasValue || s.AccountsPayableId == dto.AccountsPayableId.Value));
+
+                if (!cuotaCoincide)
+                    throw new Exception("La cuota indicada no existe o no pertenece a la cuenta por pagar señalada.");
+            }
+
             // 2. Armar el objeto
             var nuevoEgreso = new Expense
             {
@@ -151,8 +180,10 @@ namespace Api_Tlapaleria.Services
             }
             catch (DbUpdateException ex)
             {
-                // Si el error viene de nuestro Trigger (45000), el InnerException trae el mensaje exacto
-                if (ex.InnerException != null && ex.InnerException.Message.Contains("El abono excede el saldo"))
+                // Siempre exponemos el mensaje real del trigger (sobrepago, u otra regla
+                // de negocio futura) en vez de solo reconocer un texto exacto: los mensajes
+                // SIGNAL ya están redactados pensando en que el usuario final los lea.
+                if (ex.InnerException != null)
                 {
                     throw new Exception(ex.InnerException.Message);
                 }
@@ -174,8 +205,10 @@ namespace Api_Tlapaleria.Services
             if (!egreso.IsActive)
                 throw new Exception("Este egreso ya fue anulado anteriormente.");
 
-            // Desactivamos lógicamente.
+            // Desactivamos lógicamente y dejamos auditoría de quién y cuándo anuló.
             egreso.IsActive = false;
+            egreso.CancelledByUserId = userId;
+            egreso.CancelledAt = DateTime.Now;
 
             try
             {

@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using Api_Tlapaleria.Enums;
 
 namespace Api_Tlapaleria.DTOs
 {
@@ -17,6 +18,7 @@ namespace Api_Tlapaleria.DTOs
         public decimal Amount { get; set; }
 
         [Required(ErrorMessage = "El método de pago es obligatorio")]
+        [EnumDataType(typeof(PaymentMethod), ErrorMessage = "El método de pago no es válido. Usa: Efectivo, Transferencia, Tarjeta o Cheque")]
         public string PaymentMethod { get; set; } // "Efectivo", "Transferencia", "Tarjeta", "Cheque"
 
         [Required(ErrorMessage = "Debes clasificar el tipo de gasto (Categoría)")]
@@ -59,7 +61,9 @@ namespace Api_Tlapaleria.DTOs
         public DateTime? DueDate { get; set; }
 
         // Cada cuántos días se pactó abonar (Ej: 7 = Semanal, 15 = Quincenal).
-        // Si viene NULL o 0, el sistema entenderá que es Crédito con Abonos Libres (sin plan de pagos).
+        // Si el campo se omite (NULL), el sistema entenderá que es Crédito con
+        // Abonos Libres (sin plan de pagos). No se acepta 0: si se envía, el
+        // Range de abajo lo rechaza con un 400 antes de llegar al servicio.
         [Range(1, 365, ErrorMessage = "La frecuencia de pago debe estar entre 1 y 365 días")]
         public int? PaymentFrequencyDays { get; set; }
     }
