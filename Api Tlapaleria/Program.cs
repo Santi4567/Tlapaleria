@@ -24,7 +24,7 @@ internal class Program
 /_/   \_\|_)   (____)  \____/(____) \____/  
         ");
         Console.WriteLine("ejecutando...");
-        Console.WriteLine("versión 3.5.1\n");
+        Console.WriteLine("versión 3.5.2\n");
         // -------------------------
 
         var builder = WebApplication.CreateBuilder(args);
@@ -54,25 +54,17 @@ internal class Program
             });
 
         // CORS
+        // CORS
         builder.Services.AddCors(options =>
         {
             options.AddPolicy("PoliticaFrontend", policy =>
             {
-                if (builder.Environment.IsDevelopment())
-                {
-                    // Electron en modo dev (electron-vite)
-                    policy.WithOrigins("http://localhost:5173")
-                          .AllowAnyHeader()
-                          .AllowAnyMethod()
-                          .AllowCredentials();
-                }
-                else
-                {
-                    // Electron empaquetado: carga con file:// y envía "Origin: null"
-                    policy.WithOrigins("null")
-                          .AllowAnyHeader()
-                          .AllowAnyMethod();
-                }
+                policy.WithOrigins(
+                        "http://localhost:5173", // Electron en desarrollo
+                        "null"                   // Electron empaquetado (file://)
+                      )
+                      .AllowAnyHeader()
+                      .AllowAnyMethod();
             });
         });
 
@@ -304,7 +296,7 @@ internal class Program
             Console.ResetColor();
 
             Console.WriteLine("Running...");
-            Console.WriteLine("version 3.5.1\n");
+            Console.WriteLine("version 3.5.2\n");
 
             // --- LEEMOS Y MOSTRAMOS LOS PUERTOS ACTIVOS ---
             Console.ForegroundColor = ConsoleColor.Yellow;
