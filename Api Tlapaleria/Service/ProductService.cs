@@ -2,6 +2,8 @@
 using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Models;
 using Microsoft.EntityFrameworkCore;
+using System.Globalization;
+using System.Text.RegularExpressions;
 
 namespace Api_Tlapaleria.Services
 {
@@ -436,6 +438,8 @@ namespace Api_Tlapaleria.Services
             return productosEnRiesgo;
         }
 
+        //================================ Secciones de Ayuda al front =====================================
+
         // Verificar si un código interno ya está siendo utilizado
         public async Task<string?> CheckInternalCodeAsync(string internalCode)
         {
@@ -452,5 +456,50 @@ namespace Api_Tlapaleria.Services
 
             return nombreProducto;
         }
+
+        // Obtener el nombre base de un producto para duplicarlo (sin la medida)
+        public async Task<List<string>> GetNameSuggestionsAsync(string q)
+        {
+            q = (q ?? "").Trim();
+            if (q.Length < 2)
+                return new List<string>();
+
+            // Nombres completos que empiezan con lo escrito (LIKE 'q%')
+            var nombres = await _context.Products
+                .AsNoTracking()
+                .Where(p => p.IsActive && p.Name.StartsWith(q))
+                .Select(p => p.Name)
+                .Distinct()
+                .OrderBy(n => n)
+                .Take(300)
+                .ToListAsync();
+
+            var compare = CultureInfo.InvariantCulture.CompareInfo;
+
+            return nombres
+                .Select(ExtractBaseName)                                   // "abrazadera omega 3/4" -> "abrazadera omega"
+                .Distinct(StringComparer.OrdinalIgnoreCase)                // una sola sugerencia por familia
+                .Where(b => compare.IsPrefix(b, q,
+                    CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace))
+                .Take(10)
+                .ToList();
+        }
+
+        // "abrazadera omega 1 1/4" -> "abrazadera omega"
+        // Quita la medida del final: enteros, decimales, fracciones, mixtos y unidades comunes (", pulg, mm, cm)
+        private static readonly Regex MedidaFinal = new(
+            @"\s+\d+(?:[.,]\d+)?(?:\s+\d+/\d+|/\d+)?\s*(?:""|''|pulg\.?|mm|cm)?$",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+        private static string ExtractBaseName(string nombre)
+        {
+            nombre = nombre.Trim();
+            var baseName = MedidaFinal.Replace(nombre, "").Trim();
+
+            // Si el nombre era solo una medida, no dejamos el campo vacío
+            return baseName.Length > 0 ? baseName : nombre;
+        }
+
+        //================================ Fin de Secciones de Ayuda al front =====================================
     }
 }

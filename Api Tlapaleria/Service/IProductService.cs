@@ -22,7 +22,14 @@ namespace Api_Tlapaleria.Services
         //Fecha de caducidad de los productos
         Task<List<ExpiringProductDto>> GetExpiringProductsAsync();
 
+        //----------------Secciones de Ayuda al front-----------------------------
+
         //Buscador de Codigo Interno(Ayuda al front en el formulario de registro)
         Task<string?> CheckInternalCodeAsync(string internalCode);
+
+        //Sugerencias de nombre base (sin medida) mientras el usuario escribe en el alta
+        Task<List<string>> GetNameSuggestionsAsync(string q);
+
+        // ----------------Secciones de Ayuda al front-----------------------------
     }
 }

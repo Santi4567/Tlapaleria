@@ -117,5 +117,13 @@ namespace Api_Tlapaleria.Controllers
                 "El codigo interno ya esta usado "
             ));
         }
+
+        [HttpGet("name-suggestions")]
+        [RequierePermiso("view.products")]
+        public async Task<ActionResult<ApiResponse<List<string>>>> GetNameSuggestions([FromQuery] string? q = "")
+        {
+            var sugerencias = await _productService.GetNameSuggestionsAsync(q ?? "");
+            return Ok(ApiResponse<List<string>>.Exito(sugerencias));
+        }
     }
 }

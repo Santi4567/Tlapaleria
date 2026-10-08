@@ -58,5 +58,13 @@ namespace Api_Tlapaleria.Models
 
         public bool HasExpiration { get; set; } = false;
         public DateTime? NextExpirationDate { get; set; }
+
+
+    }
+    // Plantilla para duplicar un producto. Por ahora solo trae el nombre base;
+    // aquí se irán agregando campos (marca, proveedor, etc.) cuando se decida copiarlos.
+    public class DuplicateTemplateDto
+    {
+        public string Name { get; set; } = string.Empty;
     }
 }
