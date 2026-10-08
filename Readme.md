@@ -4,7 +4,7 @@
    ___    ____  ____    __    ____   ____ 
   / _ \  |  _ \(_  _)  |  )  (  __) /    \
  / ___ \ |  __/ _)(_   | (_/\ | _) |  ()  |
-/_/   \_\|_)   (____)  \____/(____) \____/  
+/_/   \_\|_)   (____)  \____/(____) \____/  by:s4lmo.exe
 ```
 
 ### Backend API - Sistema POS & ERP Multi-caja | `s4lm0.exe`
@@ -27,6 +27,8 @@
 
 Este backend está desarrollado en **C# y ASP.NET Core**, optimizado para operar como el motor central de un **Sistema ERP y POS multi-caja**. Está diseñado para resolver problemáticas comerciales del mundo real —como la gestión flexible de unidades y presentaciones sin duplicar registros de inventario— garantizando seguridad, trazabilidad de precios y control financiero en tiempo real.
 
+*Creado desde la experienza de 6 años de trabajo en una Tlapaleria*
+
 ---
 
 ## 🛠️ Tecnologías y Stack
@@ -34,6 +36,7 @@ Este backend está desarrollado en **C# y ASP.NET Core**, optimizado para operar
 * **Framework:** .NET / ASP.NET Core
 * **Acceso a Datos:** LINQ, Entity Framework Core / SQL
 * **Seguridad:** Hashing de contraseñas con **BCrypt** y autenticación basada en roles (RBAC)
+* **Sesiones:** Multi secciones por usuario, los administradores pueden otorgar o quitar el acesso a usuarios incluso con sesiones activas
 * **Control de Versiones:** Git / GitHub
 
 ---
@@ -46,16 +49,18 @@ Este backend está desarrollado en **C# y ASP.NET Core**, optimizado para operar
 
 ### 📦 2. ERP e Inventario Inteligente Avanzado
 * **Manejo de Presentaciones Múltiples:** Permite vender un producto en diferentes formatos (ej. *Bulto de cemento de 50 kg* o *Cemento por 1 kg*) **sin necesidad de duplicar el producto ni alterar la integridad del stock base**.
-* Control riguroso de **fechas de caducidad** para evitar mermas por productos vencidos.
+* Control riguroso de **fechas de caducidad** para evitar mermas por productos vencidos con alerta por fecha de caduccidad proxima.
 * Sugerencias inteligentes de nombres y autocompletado optimizadas para búsqueda rápida en mostrador.
 
 ### 📈 3. Historial de Precios y Trazabilidad
-* Registro histórico de cambios de precios por producto.
+* Registro histórico de cambios de precios por producto(precio proveedor y publico).
 * Métricas y gráficos de evolución: visualiza exactamente cuánto ha subido o cambiado el costo y precio de venta de un artículo a lo largo del tiempo.
 
 ### 💰 4. Módulo Financiero y Analítica
 * Cálculo automático de **ventas netas** y **ganancias reales**.
 * Reportes de rendimiento financiero orientados a la toma de decisiones comerciales.
+* Reportes por rango de fechas
+* Registro de Egresos: Pago de servicios, Pago a proveedores 
 
 ### 🚚 5. Gestión de Pedidos y Cadena de Suministro
 * Control completo del ciclo de compra: creación de pedidos a proveedores, seguimiento y recepción de mercancía en almacén para actualización automática de stock.
@@ -63,6 +68,7 @@ Este backend está desarrollado en **C# y ASP.NET Core**, optimizado para operar
 ### 👥 6. Control de Acceso Basado en Roles (RBAC)
 * Seguridad granular por roles de usuario (Administrador, Cajero, Almacenista, etc.).
 * Encriptación robusta de credenciales con **BCrypt**.
+* **Adinistradores:** Los administradores pueden controlar los acesos de los usuarios, reestablecer contraseñas
 
 ---
 
