@@ -17,6 +17,8 @@
 ![.NET](https://img.shields.io/badge/.NET-5C2D91?style=for-the-badge&logo=.net&logoColor=white)
 ![ASP.NET Core](https://img.shields.io/badge/asp.net_core-512BD4?style=for-the-badge&logo=dotnet&logoColor=white)
 ![Entity Framework](https://img.shields.io/badge/entity_framework-5C2D91?style=for-the-badge&logo=dotnet&logoColor=white)
+![LINQ](https://img.shields.io/badge/LINQ-5C2D91?style=for-the-badge&logo=dotnet&logoColor=white)
+![MySQL](https://img.shields.io/badge/MySQL-4479A1?style=for-the-badge&logo=mysql&logoColor=white)
 
 ![alt text](image.png)
 ---
@@ -83,22 +85,8 @@ Console.WriteLine("s4lm0.exe\n");
 ```
 
 ### Prerrequisitos
-* .NET SDK (versión compatible con tu proyecto ASP.NET Core)
-* Motor de Base de datos SQL configurado
-
-### Configuración y Ejecución
-1. Clona el repositorio:
-   ```bash
-   git clone https://github.com/tu-usuario/tu-repositorio.git
-   ```
-2. Configura tu cadena de conexión en el archivo `appsettings.json`.
-3. Restaura las dependencias y ejecuta el proyecto:
-   ```bash
-   dotnet restore
-   dotnet run
-   ```
-
----
+* .NET SDK 8
+* MySQL configurado
 
 ## 🛡️ Seguridad
 * Las contraseñas de los usuarios nunca se almacenan en texto plano; se utiliza **BCrypt** para un hashing seguro.
