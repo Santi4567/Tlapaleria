@@ -24,7 +24,8 @@ internal class Program
 /_/   \_\|_)   (____)  \____/(____) \____/  
         ");
         Console.WriteLine("ejecutando...");
-        Console.WriteLine("versión 3.5.2\n");
+        Console.WriteLine("versión 3.6.1n");
+        Console.WriteLine("s4lm0.exe\n");
         // -------------------------
 
         var builder = WebApplication.CreateBuilder(args);
@@ -104,6 +105,9 @@ internal class Program
 
         //Servicio de Egresos y Cuentas por Pagar
         builder.Services.AddScoped<IExpenseService, ExpenseService>();
+
+        //Servicio de Marcas (Brands)
+        builder.Services.AddScoped<IBrandService, BrandService>();
 
         //CONFIGURACIÓN DE JWT Y COOKIES
         builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
@@ -296,7 +300,7 @@ internal class Program
             Console.ResetColor();
 
             Console.WriteLine("Running...");
-            Console.WriteLine("version 3.5.2\n");
+            Console.WriteLine("version 3.6.1\n");
 
             // --- LEEMOS Y MOSTRAMOS LOS PUERTOS ACTIVOS ---
             Console.ForegroundColor = ConsoleColor.Yellow;

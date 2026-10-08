@@ -25,6 +25,8 @@ namespace Api_Tlapaleria.Data
 
         public DbSet<UserSession> UserSessions { get; set; }   // <-- Modelo de la tabla Usersession
 
+        public DbSet<Brand> Brands { get; set; }  // <--- Modelo de la tabla de Marcas 
+
         // --- MÓDULO DE EGRESOS ---
         public DbSet<ExpenseCategory> ExpenseCategories { get; set; }
         public DbSet<AccountsPayable> AccountsPayables { get; set; }

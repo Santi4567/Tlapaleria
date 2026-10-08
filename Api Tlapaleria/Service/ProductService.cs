@@ -8,15 +8,22 @@ namespace Api_Tlapaleria.Services
     public class ProductService : IProductService
     {
         private readonly TlapaleriaContext _context;
+        private readonly IBrandService _brandService;
 
-        public ProductService(TlapaleriaContext context)
+        public ProductService(TlapaleriaContext context, IBrandService brandService)
         {
             _context = context;
+            _brandService = brandService;
         }
 
         //POST: Crear un nuevo registro en la tabla de Productos
         public async Task<Product> CreateProductAsync(CreateProductDto datos, int userIdToken)
         {
+            // Validacion de Marca: resolver la marca ANTES de abrir la transacción
+            string? brandName = null;
+            if (!string.IsNullOrWhiteSpace(datos.Brand))
+                brandName = (await _brandService.GetOrCreateAsync(datos.Brand)).Name;
+
             using var transaction = await _context.Database.BeginTransactionAsync();
 
             try
@@ -48,7 +55,7 @@ namespace Api_Tlapaleria.Services
                     Barcode = datos.Barcode,
                     Name = datos.Name,
                     Description = datos.Description,
-                    Brand = datos.Brand,
+                    Brand = brandName,
                     Location = datos.Location,
                     SupplierId = datos.SupplierId,
                     ProfitMargin = datos.ProfitMargin,
@@ -186,6 +193,11 @@ namespace Api_Tlapaleria.Services
         //Actualizar Prodcutos usando reglas 
         public async Task<Product> UpdateProductAsync(int id, UpdateProductDto datos, int userIdToken)
         {
+            // Validacion de Marca: resolver la marca ANTES de abrir la transacción
+            string? brandName = null;
+            if (!string.IsNullOrWhiteSpace(datos.Brand))
+                brandName = (await _brandService.GetOrCreateAsync(datos.Brand)).Name;
+
             using var transaction = await _context.Database.BeginTransactionAsync();
 
             try
@@ -227,7 +239,7 @@ namespace Api_Tlapaleria.Services
                 productoExistente.Barcode = datos.Barcode;
                 productoExistente.Name = datos.Name;
                 productoExistente.Description = datos.Description;
-                productoExistente.Brand = datos.Brand;
+                productoExistente.Brand = brandName;
                 productoExistente.Location = datos.Location;
                 productoExistente.SupplierId = datos.SupplierId;
                 productoExistente.ProfitMargin = datos.ProfitMargin;
