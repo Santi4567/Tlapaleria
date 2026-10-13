@@ -1,5 +1,6 @@
 ﻿using Api_Tlapaleria.Attributes;
 using Api_Tlapaleria.DTOs;
+using Api_Tlapaleria.Enums;
 using Api_Tlapaleria.Models;
 using Api_Tlapaleria.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -24,9 +25,10 @@ namespace Api_Tlapaleria.Controllers
         [RequierePermiso("view.reports")]
         public async Task<ActionResult<ApiResponse<FinancialReportDto>>> GetFinancialReport(
             [FromQuery] DateTime? startDate = null,
-            [FromQuery] DateTime? endDate = null)
+            [FromQuery] DateTime? endDate = null,
+            [FromQuery] FinancialReportPeriod periodType = FinancialReportPeriod.CustomRange)
         {
-            var report = await _reportService.GetFinancialReportAsync(startDate, endDate);
+            var report = await _reportService.GetFinancialReportAsync(startDate, endDate, periodType);
             return Ok(ApiResponse<FinancialReportDto>.Exito(report, "Reporte financiero generado exitosamente."));
         }
 

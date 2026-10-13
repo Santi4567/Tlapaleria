@@ -1,5 +1,6 @@
 ﻿using Api_Tlapaleria.Data;
 using Api_Tlapaleria.DTOs;
+using Api_Tlapaleria.Enums;
 using Microsoft.EntityFrameworkCore;
 
 namespace Api_Tlapaleria.Services
@@ -13,38 +14,79 @@ namespace Api_Tlapaleria.Services
             _context = context;
         }
 
-        public async Task<FinancialReportDto> GetFinancialReportAsync(DateTime? startDate, DateTime? endDate)
+        public async Task<FinancialReportDto> GetFinancialReportAsync(
+            DateTime? startDate,
+            DateTime? endDate,
+            FinancialReportPeriod periodType = FinancialReportPeriod.CustomRange)
         {
-            // 1. Consultas base aplicando las reglas de negocio (IsActive)
-            var salesQuery = _context.Sales.Where(s => s.IsActive).AsQueryable();
-            // Asumiendo que tu tabla de devoluciones se llama Returns y tiene relación con Sale
-            var returnsQuery = _context.Returns.Where(r => r.Sale.IsActive).AsQueryable();
+            var now = DateTime.Now;
+            DateTime effectiveStart;
+            DateTime effectiveEnd;
 
-            // 2. Aplicar filtros de fechas si existen
-            if (startDate.HasValue)
+            // 1. Determinar el rango de fechas según el botón seleccionado (periodType)
+            switch (periodType)
             {
-                salesQuery = salesQuery.Where(s => s.CreatedAt >= startDate.Value);
-                returnsQuery = returnsQuery.Where(r => r.CreatedAt >= startDate.Value);
+                case FinancialReportPeriod.Day: // 1: HOY (o el día enviado en startDate)
+                    var targetDay = startDate?.Date ?? now.Date;
+                    effectiveStart = targetDay;
+                    effectiveEnd = targetDay.AddDays(1).AddTicks(-1);
+                    break;
+
+                case FinancialReportPeriod.Month: // 2: MES (actual o el mes de startDate)
+                    var targetMonth = startDate ?? now;
+                    effectiveStart = new DateTime(targetMonth.Year, targetMonth.Month, 1);
+                    effectiveEnd = effectiveStart.AddMonths(1).AddTicks(-1);
+                    break;
+
+                case FinancialReportPeriod.Year: // 3: AÑO (actual o el año de startDate)
+                    var targetYear = startDate?.Year ?? now.Year;
+                    effectiveStart = new DateTime(targetYear, 1, 1);
+                    effectiveEnd = new DateTime(targetYear, 12, 31, 23, 59, 59, 999);
+                    break;
+
+                case FinancialReportPeriod.CustomRange: // 0: Rango libre (con protección de 2 años)
+                default:
+                    if (!startDate.HasValue && !endDate.HasValue)
+                    {
+                        effectiveStart = now.Date.AddYears(-1);
+                        effectiveEnd = now.Date.AddDays(1).AddTicks(-1);
+                    }
+                    else
+                    {
+                        effectiveStart = startDate?.Date ?? now.Date.AddYears(-1);
+                        var rawEnd = endDate?.Date ?? now.Date;
+
+                        if (effectiveStart > rawEnd)
+                            (effectiveStart, rawEnd) = (rawEnd, effectiveStart);
+
+                        effectiveEnd = rawEnd.AddDays(1).AddTicks(-1);
+
+                        if ((effectiveEnd - effectiveStart).TotalDays > 731)
+                            throw new Exception("El rango de fechas no puede exceder los 2 años.");
+                    }
+                    break;
             }
 
-            if (endDate.HasValue)
-            {
-                var endOfDay = endDate.Value.Date.AddDays(1).AddTicks(-1);
-                salesQuery = salesQuery.Where(s => s.CreatedAt <= endOfDay);
-                returnsQuery = returnsQuery.Where(r => r.CreatedAt <= endOfDay);
-            }
+            // 2. Consultas base aplicando las reglas de negocio (IsActive) y el rango de fechas
+            var salesQuery = _context.Sales
+                .Where(s => s.IsActive && s.CreatedAt >= effectiveStart && s.CreatedAt <= effectiveEnd)
+                .AsQueryable();
+
+            var returnsQuery = _context.Returns
+                .Where(r => r.Sale.IsActive && r.CreatedAt >= effectiveStart && r.CreatedAt <= effectiveEnd)
+                .AsQueryable();
 
             // 3. Obtener Totales Generales (Resumen)
             var totalSalesCount = await salesQuery.CountAsync();
             var grossAmount = await salesQuery.SumAsync(s => (decimal?)s.TotalAmount) ?? 0m;
             var returnsAmount = await returnsQuery.SumAsync(r => (decimal?)r.TotalRefunded) ?? 0m;
 
-            // --- NUEVO: Costo total de lo vendido (todas las líneas de las ventas del rango) ---
+            // Costo total de lo vendido (todas las líneas de las ventas del rango)
             var costOfGoodsSold = await salesQuery
                 .SelectMany(s => s.Details)
                 .SumAsync(d => (decimal?)d.SupplierCostSubtotal) ?? 0m;
 
-            // --- NUEVO: Costo de lo devuelto (usando el ancla SaleDetailId) ---
+            // Costo de lo devuelto (usando el ancla SaleDetailId)
             var costOfReturnedGoods = await _context.ReturnDetails
                 .Where(rd => rd.Return!.Sale!.IsActive && returnsQuery.Select(r => r.Id).Contains(rd.ReturnId))
                 .SumAsync(rd => (decimal?)(rd.QuantityReturned * rd.SaleDetail!.SupplierPriceAtSale)) ?? 0m;
@@ -52,73 +94,104 @@ namespace Api_Tlapaleria.Services
             var netCost = costOfGoodsSold - costOfReturnedGoods;
             var realProfit = (grossAmount - returnsAmount) - netCost;
 
-            // 4. Obtener datos agrupados por día para la gráfica
-            var salesByDate = await salesQuery
+            // 4. Extraer eventos con su timestamp exacto para agrupar según el periodo
+            var rawSales = await salesQuery
                 .Select(s => new
                 {
-                    Date = s.CreatedAt.Date,
-                    TotalAmount = s.TotalAmount,
-                    // NUEVO: Extraemos el costo total de los detalles de cada venta
+                    s.CreatedAt,
+                    s.TotalAmount,
                     Cost = s.Details.Sum(d => (decimal?)d.SupplierCostSubtotal) ?? 0m
                 })
-                .GroupBy(x => x.Date)
-                .Select(g => new
-                {
-                    Date = g.Key,
-                    Count = g.Count(),
-                    Gross = g.Sum(x => x.TotalAmount),
-                    TotalCost = g.Sum(x => x.Cost) // NUEVO: Agrupamos el costo por día
-                })
                 .ToListAsync();
 
-            var returnsByDate = await returnsQuery
+            var rawReturns = await returnsQuery
                 .Select(r => new
                 {
-                    Date = r.CreatedAt.Date,
-                    TotalRefunded = r.TotalRefunded,
-                    // NUEVO: Extraemos el costo de los productos devueltos
+                    r.CreatedAt,
+                    r.TotalRefunded,
                     ReturnedCost = r.Details.Sum(rd => (decimal?)(rd.QuantityReturned * rd.SaleDetail!.SupplierPriceAtSale)) ?? 0m
-                })
-                .GroupBy(x => x.Date)
-                .Select(g => new
-                {
-                    Date = g.Key,
-                    Refunded = g.Sum(x => x.TotalRefunded),
-                    ReturnedCost = g.Sum(x => x.ReturnedCost) // NUEVO: Agrupamos el costo devuelto por día
                 })
                 .ToListAsync();
 
-            // 5. Unificar ventas y devoluciones por fecha en memoria
-            var allDates = salesByDate.Select(s => s.Date)
-                .Union(returnsByDate.Select(r => r.Date))
-                .OrderBy(d => d)
+            // 5. Agrupar y formatear etiquetas según el periodo (Hora, Semana, Mes o Día)
+            string[] mesesAbrev = { "", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic" };
+
+            (int SortKey, string Label) GetBucket(DateTime dt)
+            {
+                switch (periodType)
+                {
+                    case FinancialReportPeriod.Day:
+                        // Solo en HOY aparece la hora: ej. "09:00", "14:00"
+                        return (dt.Hour, $"{dt.Hour:D2}:00");
+
+                    case FinancialReportPeriod.Month:
+                        // Semanas con su rango exacto de días: ej. "Sem 1 (01-07)"
+                        int weekNum = (dt.Day - 1) / 7 + 1;
+                        int startDay = (weekNum - 1) * 7 + 1;
+                        int daysInMonth = DateTime.DaysInMonth(dt.Year, dt.Month);
+                        int endDay = Math.Min(weekNum * 7, daysInMonth);
+                        return (weekNum, $"Sem {weekNum} ({startDay:D2}-{endDay:D2})");
+
+                    case FinancialReportPeriod.Year:
+                        // Por mes del año con nombre corto: ej. "Ene 2026", "Feb 2026"
+                        return (dt.Month, $"{mesesAbrev[dt.Month]} {dt.Year}");
+
+                    default:
+                        // Rango personalizado por día: ej. "2026-10-13"
+                        return (int.Parse(dt.ToString("yyyyMMdd")), dt.ToString("yyyy-MM-dd"));
+                }
+            }
+
+            var salesGrouped = rawSales
+                .GroupBy(s => GetBucket(s.CreatedAt))
+                .ToDictionary(
+                    g => g.Key,
+                    g => new
+                    {
+                        Count = g.Count(),
+                        Gross = g.Sum(x => x.TotalAmount),
+                        TotalCost = g.Sum(x => x.Cost)
+                    });
+
+            var returnsGrouped = rawReturns
+                .GroupBy(r => GetBucket(r.CreatedAt))
+                .ToDictionary(
+                    g => g.Key,
+                    g => new
+                    {
+                        Refunded = g.Sum(x => x.TotalRefunded),
+                        ReturnedCost = g.Sum(x => x.ReturnedCost)
+                    });
+
+            var allBuckets = salesGrouped.Keys
+                .Union(returnsGrouped.Keys)
+                .OrderBy(k => k.SortKey)
                 .ToList();
 
             var chartData = new List<ChartDataPointDto>();
 
-            foreach (var date in allDates)
+            foreach (var bucket in allBuckets)
             {
-                var saleData = salesByDate.FirstOrDefault(s => s.Date == date);
-                var returnData = returnsByDate.FirstOrDefault(r => r.Date == date);
+                salesGrouped.TryGetValue(bucket, out var saleData);
+                returnsGrouped.TryGetValue(bucket, out var returnData);
 
-                var dayCount = saleData?.Count ?? 0;
-                var dayGross = saleData?.Gross ?? 0m;
-                var dayCost = saleData?.TotalCost ?? 0m;
+                var count = saleData?.Count ?? 0;
+                var gross = saleData?.Gross ?? 0m;
+                var cost = saleData?.TotalCost ?? 0m;
 
-                var dayRefund = returnData?.Refunded ?? 0m;
-                var dayReturnedCost = returnData?.ReturnedCost ?? 0m;
+                var refund = returnData?.Refunded ?? 0m;
+                var returnedCost = returnData?.ReturnedCost ?? 0m;
 
-                // NUEVO: Cálculos financieros diarios
-                var dayNetSales = dayGross - dayRefund;
-                var dayNetCost = dayCost - dayReturnedCost;
-                var dayRealProfit = dayNetSales - dayNetCost;
+                var netSales = gross - refund;
+                var bucketNetCost = cost - returnedCost;
+                var bucketRealProfit = netSales - bucketNetCost;
 
                 chartData.Add(new ChartDataPointDto
                 {
-                    DateLabel = date.ToString("yyyy-MM-dd"),
-                    SalesCount = dayCount,
-                    NetAmount = dayNetSales,
-                    RealProfitAmount = dayRealProfit // <-- ASIGNACIÓN CORREGIDA
+                    DateLabel = bucket.Label,
+                    SalesCount = count,
+                    NetAmount = netSales,
+                    RealProfitAmount = bucketRealProfit
                 });
             }
 
@@ -129,8 +202,8 @@ namespace Api_Tlapaleria.Services
                 GrossSalesAmount = grossAmount,
                 TotalRefundedAmount = returnsAmount,
                 NetSalesAmount = grossAmount - returnsAmount,
-                CostOfGoodsSold = netCost,           
-                RealProfitAmount = realProfit,       
+                CostOfGoodsSold = netCost,
+                RealProfitAmount = realProfit,
                 ChartData = chartData
             };
         }
