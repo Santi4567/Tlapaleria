@@ -405,5 +405,178 @@ namespace Api_Tlapaleria.Services
                 History = filasFinal
             };
         }
+
+        // -- Reporte de ventas por proveedor (para separar el dinero de cada proveedor) --
+        public async Task<SupplierSalesReportResponseDto> GetSupplierSalesReportAsync( DateTime? startDate = null, DateTime? endDate = null, SupplierReportPeriod periodType = SupplierReportPeriod.AllTime)
+        {
+            var now = DateTime.Now;
+            DateTime? effectiveStart = null;
+            DateTime? effectiveEnd = null;
+
+            // 1. Determinar el rango de fechas según el botón seleccionado (periodType)
+            switch (periodType)
+            {
+                case SupplierReportPeriod.Day: // 1: HOY (o el día enviado en startDate)
+                    var targetDay = startDate?.Date ?? now.Date;
+                    effectiveStart = targetDay;
+                    effectiveEnd = targetDay.AddDays(1).AddTicks(-1);
+                    break;
+
+                case SupplierReportPeriod.Week: // 2: SEMANA (Lunes a Domingo)
+                    var refDate = startDate?.Date ?? now.Date;
+                    int diff = (7 + (refDate.DayOfWeek - DayOfWeek.Monday)) % 7;
+                    effectiveStart = refDate.AddDays(-1 * diff);
+                    effectiveEnd = effectiveStart.Value.AddDays(7).AddTicks(-1);
+                    break;
+
+                case SupplierReportPeriod.Month: // 3: MES (actual o el mes de startDate)
+                    var targetMonth = startDate ?? now;
+                    effectiveStart = new DateTime(targetMonth.Year, targetMonth.Month, 1);
+                    effectiveEnd = effectiveStart.Value.AddMonths(1).AddTicks(-1);
+                    break;
+
+                case SupplierReportPeriod.Year: // 4: AÑO (actual o el año de startDate)
+                    var targetYear = startDate?.Year ?? now.Year;
+                    effectiveStart = new DateTime(targetYear, 1, 1);
+                    effectiveEnd = new DateTime(targetYear, 12, 31, 23, 59, 59, 999);
+                    break;
+
+                case SupplierReportPeriod.AllTime: // 5: TODO EL HISTORIAL
+                    effectiveStart = null;
+                    effectiveEnd = null;
+                    break;
+
+                case SupplierReportPeriod.CustomRange: // 0: Rango libre de fechas
+                default:
+                    if (startDate.HasValue || endDate.HasValue)
+                    {
+                        var start = startDate?.Date ?? endDate!.Value.Date;
+                        var end = endDate?.Date ?? startDate!.Value.Date;
+
+                        if (start > end)
+                            (start, end) = (end, start);
+
+                        effectiveStart = start;
+                        effectiveEnd = end.AddDays(1).AddTicks(-1);
+
+                        if ((effectiveEnd.Value - effectiveStart.Value).TotalDays > 731)
+                            throw new Exception("El rango de fechas no puede exceder los 2 años.");
+                    }
+                    break;
+            }
+
+            // 2. Consulta base en SaleDetails: solo filtramos IsActive en Sale y SaleDetail
+            var detailsQuery = _context.SaleDetails
+                .Where(sd => sd.IsActive && sd.Sale!.IsActive);
+
+            if (effectiveStart.HasValue && effectiveEnd.HasValue)
+            {
+                detailsQuery = detailsQuery.Where(sd =>
+                    sd.Sale!.CreatedAt >= effectiveStart.Value &&
+                    sd.Sale.CreatedAt <= effectiveEnd.Value);
+            }
+
+            // 3. Traer los datos necesarios de las partidas y unir con productos, presentaciones y proveedores
+            var rawDetails = await (
+                from sd in detailsQuery
+                join p in _context.Products on sd.ProductId equals p.Id
+                join pp in _context.ProductPresentations on sd.PresentationId equals pp.Id
+                join sup in _context.Suppliers on p.SupplierId equals sup.Id
+                select new
+                {
+                    SaleDetailId = sd.Id,
+                    SaleId = sd.SaleId,
+                    SupplierId = sup.Id,
+                    SupplierName = sup.Name,
+                    Quantity = sd.Quantity,
+                    Subtotal = sd.Subtotal,
+                    SupplierPriceAtSale = sd.SupplierPriceAtSale,
+                    CatalogSupplierPrice = pp.SupplierPrice
+                }
+            ).ToListAsync();
+
+            if (!rawDetails.Any())
+            {
+                return new SupplierSalesReportResponseDto
+                {
+                    StartDate = effectiveStart,
+                    EndDate = effectiveEnd
+                };
+            }
+
+            // 4. Obtener las devoluciones agrupadas por SaleDetailId
+            var saleDetailIds = rawDetails.Select(d => d.SaleDetailId).ToList();
+
+            var returnsByDetail = await _context.ReturnDetails
+                .Where(rd => saleDetailIds.Contains(rd.SaleDetailId))
+                .GroupBy(rd => rd.SaleDetailId)
+                .Select(g => new
+                {
+                    SaleDetailId = g.Key,
+                    CantDevuelta = g.Sum(x => x.QuantityReturned),
+                    MontoDevuelto = g.Sum(x => x.RefundAmount)
+                })
+                .ToDictionaryAsync(x => x.SaleDetailId);
+
+            // 5. Calcular montos exactos por proveedor aplicando la misma fórmula y redondeo de MySQL
+            var suppliersReport = rawDetails
+                .GroupBy(d => new { d.SupplierId, d.SupplierName })
+                .Select(g =>
+                {
+                    int effectiveTickets = g
+                        .Where(d =>
+                        {
+                            var cantDev = returnsByDetail.TryGetValue(d.SaleDetailId, out var r) ? r.CantDevuelta : 0m;
+                            return (d.Quantity - cantDev) > 0m;
+                        })
+                        .Select(d => d.SaleId)
+                        .Distinct()
+                        .Count();
+
+                    decimal dineroProveedor = 0m;
+                    decimal totalCobrado = 0m;
+                    decimal tuGanancia = 0m;
+
+                    foreach (var d in g)
+                    {
+                        var cantDev = returnsByDetail.TryGetValue(d.SaleDetailId, out var r) ? r.CantDevuelta : 0m;
+                        var montoDev = r != null ? r.MontoDevuelto : 0m;
+
+                        decimal effectiveQty = d.Quantity - cantDev;
+                        decimal unitCost = d.SupplierPriceAtSale > 0m ? d.SupplierPriceAtSale : d.CatalogSupplierPrice;
+
+                        // Redondeo por partida a 2 decimales (AwayFromZero igual que ROUND en MySQL)
+                        decimal rowSupplierCost = Math.Round(effectiveQty * unitCost, 2, MidpointRounding.AwayFromZero);
+                        decimal rowNetCharged = d.Subtotal - montoDev;
+                        decimal rowProfit = rowNetCharged - rowSupplierCost;
+
+                        dineroProveedor += rowSupplierCost;
+                        totalCobrado += rowNetCharged;
+                        tuGanancia += rowProfit;
+                    }
+
+                    return new SupplierSalesReportItemDto
+                    {
+                        SupplierId = g.Key.SupplierId,
+                        SupplierName = g.Key.SupplierName,
+                        EffectiveTickets = effectiveTickets,
+                        SupplierAmount = dineroProveedor,
+                        TotalChargedClient = totalCobrado,
+                        ProfitAmount = tuGanancia
+                    };
+                })
+                .OrderByDescending(x => x.SupplierAmount)
+                .ToList();
+
+            return new SupplierSalesReportResponseDto
+            {
+                StartDate = effectiveStart,
+                EndDate = effectiveEnd,
+                TotalSupplierAmount = suppliersReport.Sum(x => x.SupplierAmount),
+                TotalChargedClient = suppliersReport.Sum(x => x.TotalChargedClient),
+                TotalProfitAmount = suppliersReport.Sum(x => x.ProfitAmount),
+                Suppliers = suppliersReport
+            };
+        }
     }
 }

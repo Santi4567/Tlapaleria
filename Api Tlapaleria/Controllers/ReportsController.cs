@@ -44,5 +44,17 @@ namespace Api_Tlapaleria.Controllers
             var historial = await _reportService.GetPriceHistoryAsync(id, presentationId, startDate, endDate);
             return Ok(ApiResponse<ProductPriceHistoryDto>.Exito(historial));
         }
+
+        // -- Reporte de ventas por proveedor (separación de dinero de proveedores y ganancia) --
+        [HttpGet("suppliers-sales")]
+        [RequierePermiso("view.reports")]
+        public async Task<ActionResult<ApiResponse<SupplierSalesReportResponseDto>>> GetSupplierSalesReport(
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null,
+            [FromQuery] SupplierReportPeriod periodType = SupplierReportPeriod.AllTime)
+        {
+            var report = await _reportService.GetSupplierSalesReportAsync(startDate, endDate, periodType);
+            return Ok(ApiResponse<SupplierSalesReportResponseDto>.Exito(report, "Reporte de ventas por proveedor generado exitosamente."));
+        }
     }
 }

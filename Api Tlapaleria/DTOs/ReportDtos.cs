@@ -49,5 +49,26 @@
         public bool Actual { get; set; } = false; // true solo en el nodo sintético de "hoy" (Caso 1)
     }
 
+    // -- Para el reporte de corte/ventas por proveedor --
+    public class SupplierSalesReportItemDto
+    {
+        public int SupplierId { get; set; }
+        public string SupplierName { get; set; } = string.Empty;
+        public int EffectiveTickets { get; set; }
+        public decimal SupplierAmount { get; set; }      // DineroProveedor
+        public decimal TotalChargedClient { get; set; }  // TotalCobradoCliente
+        public decimal ProfitAmount { get; set; }        // TuGanancia
+    }
+
+    public class SupplierSalesReportResponseDto
+    {
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
+        public decimal TotalSupplierAmount { get; set; }
+        public decimal TotalChargedClient { get; set; }
+        public decimal TotalProfitAmount { get; set; }
+        public List<SupplierSalesReportItemDto> Suppliers { get; set; } = new();
+    }
+
     // -- FIN de  Reporte de precios para los productos ---
 }
