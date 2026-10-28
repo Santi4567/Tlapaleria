@@ -252,16 +252,26 @@ namespace Api_Tlapaleria.Services
                 productoExistente.NextExpirationDate = datos.NextExpirationDate;
                 // El stock NO se toca aquí.
 
-                // --- MAGIA DE LOS HIJOS (Presentaciones) ---
+                // --- MAGIA DE LOS HIJOS (Presentaciones) ---ls
 
-                // A. Desactivar (soft-delete) las que están en BD pero ya no vienen en el DTO
-                // NUNCA se eliminan físicamente: ya tienen historial de precio/costo y posiblemente ventas asociadas
-                var idsEnDto = datos.Presentations.Where(p => p.Id.HasValue).Select(p => p.Id.Value).ToList();
-                var presentacionesADesactivar = productoExistente.Presentations
+
+                if (datos.Presentations == null || !datos.Presentations.Any())
+                    throw new Exception("El producto debe tener al menos una presentación registrada.");
+
+                // Validación: Si está activa para venta al público, debe tener precio > 0
+                foreach (var p in datos.Presentations)
+                {
+                    if (p.IsActive && p.Price <= 0)
+                        throw new Exception($"La presentación '{p.Name}' está activa para venta al público y debe tener un precio mayor a $0.");
+                }
+
+                // A. Si alguna presentación que existía en BD de plano se quitó del arreglo, pasa a inactiva
+                var idsEnDto = datos.Presentations.Where(p => p.Id.HasValue && p.Id.Value > 0).Select(p => p.Id.Value).ToList();
+                var presentacionesNoEnviadas = productoExistente.Presentations
                     .Where(p => !idsEnDto.Contains(p.Id) && p.IsActive)
                     .ToList();
 
-                foreach (var presentacion in presentacionesADesactivar)
+                foreach (var presentacion in presentacionesNoEnviadas)
                 {
                     presentacion.IsActive = false;
                 }
@@ -277,29 +287,35 @@ namespace Api_Tlapaleria.Services
                         if (presExistente != null)
                         {
                             decimal precioAnterior = presExistente.Price;
-                            decimal costoAnterior = presExistente.SupplierPrice; // <-- NUEVO
+                            decimal costoAnterior = presExistente.SupplierPrice;
 
                             presExistente.Name = presDto.Name;
                             presExistente.Code = presDto.Code;
                             presExistente.Barcode = presDto.Barcode;
-                            presExistente.Price = presDto.Price;
-                            presExistente.SupplierPrice = presDto.SupplierPrice; // <-- NUEVO
-                            presExistente.StockFactor = presDto.StockFactor;
-                            presExistente.IsActive = true; //
 
-                            if (precioAnterior != presDto.Price)
+                            // Si está inactiva (no venta al público) y mandan 0, pero ya tenía un precio antes, 
+                            // puedes conservar el que tenía o dejar el que manden:
+                            presExistente.Price = (!presDto.IsActive && presDto.Price == 0 && precioAnterior > 0)
+                                ? precioAnterior
+                                : presDto.Price;
+
+                            presExistente.SupplierPrice = presDto.SupplierPrice;
+                            presExistente.StockFactor = presDto.StockFactor;
+                            presExistente.IsActive = presDto.IsActive; // <-- AHORA RESPETA EL SWITCH DEL FRONT
+
+                            // Solo guardamos historial de precio público si realmente cambió y es mayor a 0
+                            if (precioAnterior != presExistente.Price && presExistente.Price > 0)
                             {
                                 _context.PresentationPriceHistories.Add(new PresentationPriceHistory
                                 {
                                     PresentationId = presExistente.Id,
                                     ProductId = productoExistente.Id,
                                     OldPrice = precioAnterior,
-                                    NewPrice = presDto.Price,
+                                    NewPrice = presExistente.Price,
                                     UserId = userIdToken
                                 });
                             }
 
-                            // --- NUEVO: mismo patrón para el costo ---
                             if (costoAnterior != presDto.SupplierPrice)
                             {
                                 _context.PresentationSupplierPriceHistories.Add(new PresentationSupplierPriceHistory
@@ -323,26 +339,29 @@ namespace Api_Tlapaleria.Services
                             SupplierPrice = presDto.SupplierPrice,
                             Price = presDto.Price,
                             StockFactor = presDto.StockFactor,
-                            IsActive = true
+                            IsActive = presDto.IsActive // <-- También permite crear el Bulto/Caja directamente como no-venta
                         };
                         productoExistente.Presentations.Add(presentacionNueva);
-                        presentacionesNuevas.Add(presentacionNueva); // guardamos la referencia; aún no tiene Id
+                        presentacionesNuevas.Add(presentacionNueva);
                     }
                 }
 
-                await _context.SaveChangesAsync(); // EF le asigna Id a cada presentación nueva aquí
+                await _context.SaveChangesAsync();
 
-                // C. Ahora sí, historial "de nacimiento" para las presentaciones nuevas (0 -> precio inicial)
+                // C. Historial de nacimiento para las presentaciones nuevas
                 foreach (var nueva in presentacionesNuevas)
                 {
-                    _context.PresentationPriceHistories.Add(new PresentationPriceHistory
+                    if (nueva.Price > 0)
                     {
-                        PresentationId = nueva.Id, // ya viene poblado por EF
-                        ProductId = productoExistente.Id,
-                        OldPrice = 0,
-                        NewPrice = nueva.Price,
-                        UserId = userIdToken
-                    });
+                        _context.PresentationPriceHistories.Add(new PresentationPriceHistory
+                        {
+                            PresentationId = nueva.Id,
+                            ProductId = productoExistente.Id,
+                            OldPrice = 0,
+                            NewPrice = nueva.Price,
+                            UserId = userIdToken
+                        });
+                    }
 
                     _context.PresentationSupplierPriceHistories.Add(new PresentationSupplierPriceHistory
                     {

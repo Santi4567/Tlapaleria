@@ -4,8 +4,6 @@ namespace Api_Tlapaleria.DTOs
 {
     public class UpdatePresentationDto
     {
-        // Si el Id es 0 o nulo, significa que es una presentación NUEVA
-        // Si trae un Id, significa que vamos a ACTUALIZARLA
         public int? Id { get; set; }
 
         [Required]
@@ -13,9 +11,9 @@ namespace Api_Tlapaleria.DTOs
         public string? Code { get; set; }
         public string? Barcode { get; set; }
 
+        // CAMBIO 1: Permitimos 0 cuando la presentación no sea de venta al público
         [Required]
-        [Range(0.01, double.MaxValue)]
-
+        [Range(0, double.MaxValue)]
         public decimal Price { get; set; }
 
         [Required]
@@ -23,7 +21,11 @@ namespace Api_Tlapaleria.DTOs
         public decimal SupplierPrice { get; set; }
 
         [Required]
+        [Range(0.0001, double.MaxValue, ErrorMessage = "El factor de stock debe ser mayor a 0.")]
         public decimal StockFactor { get; set; }
+
+        // CAMBIO 2: Controla si se vende en mostrador (true) o es solo referencia/inactiva (false)
+        public bool IsActive { get; set; } = true;
     }
 
     public class UpdateProductDto
