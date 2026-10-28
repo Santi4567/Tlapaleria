@@ -143,25 +143,46 @@ namespace Api_Tlapaleria.Services
             return product;
         }
 
-        //Buscador de Prodcuto(Name,Barcode,internalCode) GET
+        // Buscador inteligente de Producto (Multi-palabra, Nombre, Marca, Barcode, InternalCode y Presentaciones)
         public async Task<List<Product>> SearchProductsAsync(string? searchTerm, bool isActive = true)
         {
             if (string.IsNullOrWhiteSpace(searchTerm))
                 return new List<Product>();
 
-            var term = searchTerm.ToLower().Trim();
+            var cleanTerm = searchTerm.Trim().ToLower();
 
-            var resultados = await _context.Products
+            // 1. Separamos por espacios para permitir buscar palabras salteadas (ej. "punta ph2 truper")
+            var words = cleanTerm.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+            var query = _context.Products
                 .AsNoTracking()
                 .Include(p => p.Presentations)
-                .Where(p => p.IsActive == isActive && (
-                    p.Name.ToLower().Contains(term) ||
-                    p.InternalCode.ToLower().Contains(term) ||
-                    p.Barcode == term ||
-                    p.Presentations.Any(pres => pres.Barcode == term || pres.Code == term)
-                ))
-                .OrderBy(p => p.Name)
-                .Take(10)
+                .Where(p => p.IsActive == isActive);
+
+            // 2. Cada palabra escrita debe coincidir en al menos uno de los campos del producto o sus hijos
+            foreach (var word in words)
+            {
+                var w = word; // Variable local para el closure de EF Core
+                query = query.Where(p =>
+                    p.Name.ToLower().Contains(w) ||
+                    p.InternalCode.ToLower().Contains(w) ||
+                    (p.Brand != null && p.Brand.ToLower().Contains(w)) ||
+                    (p.Description != null && p.Description.ToLower().Contains(w)) ||
+                    (p.Barcode != null && p.Barcode.ToLower().Contains(w)) ||
+                    p.Presentations.Any(pres =>
+                        (pres.Barcode != null && pres.Barcode.ToLower().Contains(w)) ||
+                        (pres.Code != null && pres.Code.ToLower().Contains(w)) ||
+                        pres.Name.ToLower().Contains(w)
+                    )
+                );
+            }
+
+            // 3. Ordenamos dando prioridad a coincidencias exactas de código/barcode o nombres que empiecen con lo buscado
+            var resultados = await query
+                .OrderByDescending(p => p.Barcode == cleanTerm || p.InternalCode.ToLower() == cleanTerm)
+                .ThenByDescending(p => p.Name.ToLower().StartsWith(cleanTerm))
+                .ThenBy(p => p.Name)
+                .Take(20) // Subimos de 10 a 20 para que tengas mejor visibilidad en familias grandes de tornillería/herramienta
                 .ToListAsync();
 
             return resultados;
