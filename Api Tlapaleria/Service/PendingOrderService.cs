@@ -1,4 +1,4 @@
-﻿using Api_Tlapaleria.Data;
+using Api_Tlapaleria.Data;
 using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Models;
 using Api_Tlapaleria.Enums; // No olvides tu nuevo namespace de enums
@@ -9,10 +9,12 @@ namespace Api_Tlapaleria.Services
     public class PendingOrderService : IPendingOrderService
     {
         private readonly TlapaleriaContext _context;
+        private readonly IStockReservationService _stockReservationService;
 
-        public PendingOrderService(TlapaleriaContext context)
+        public PendingOrderService(TlapaleriaContext context, IStockReservationService stockReservationService)
         {
             _context = context;
+            _stockReservationService = stockReservationService;
         }
 
         //POST: Crea un nuevo registro en la tabla de Pendientes
@@ -589,6 +591,12 @@ namespace Api_Tlapaleria.Services
 
                     await _context.SaveChangesAsync();
                     await transaction.CommitAsync();
+
+                    if (pedido.Product.IsInventoryTracked)
+                    {
+                        await _stockReservationService.BroadcastStockUpdateAsync(pedido.Product.Id, pedido.Product.CurrentStock);
+                    }
+
                     return pedido;
                 }
 

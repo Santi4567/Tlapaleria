@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Api_Tlapaleria.Models
@@ -45,6 +45,12 @@ namespace Api_Tlapaleria.Models
 
         [ConcurrencyCheck]
         public decimal CurrentStock { get; set; }
+
+        [NotMapped]
+        public decimal ReservedStock { get; set; }
+
+        [NotMapped]
+        public decimal AvailableStock => IsInventoryTracked ? Math.Max(0, CurrentStock - ReservedStock) : CurrentStock;
 
         public bool AllowFractions { get; set; } = false;
 

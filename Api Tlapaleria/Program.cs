@@ -1,5 +1,6 @@
-﻿using Api_Tlapaleria.Data;
+using Api_Tlapaleria.Data;
 using Api_Tlapaleria.DTOs;
+using Api_Tlapaleria.Hubs;
 using Api_Tlapaleria.Services; // Necesario para AuthService
 using Microsoft.AspNetCore.Authentication.JwtBearer; // Necesario para JWT
 using Microsoft.AspNetCore.Mvc;
@@ -24,7 +25,7 @@ internal class Program
 /_/   \_\|_)   (____)  \____/(____) \____/  
         ");
         Console.WriteLine("ejecutando...");
-        Console.WriteLine("versión 3.7.9 \n");
+        Console.WriteLine("versión 3.8.2 \n");
         Console.WriteLine("s4lm0.exe\n");
         // -------------------------
 
@@ -65,7 +66,8 @@ internal class Program
                         "null"                   // Electron empaquetado (file://)
                       )
                       .AllowAnyHeader()
-                      .AllowAnyMethod();
+                      .AllowAnyMethod()
+                      .AllowCredentials();
             });
         });
 
@@ -109,6 +111,10 @@ internal class Program
         //Servicio de Marcas (Brands)
         builder.Services.AddScoped<IBrandService, BrandService>();
 
+        //Apartado de inventario en memoria para multicaja + SignalR
+        builder.Services.AddSingleton<IStockReservationService, StockReservationService>();
+        builder.Services.AddSignalR();
+
         //CONFIGURACIÓN DE JWT Y COOKIES
         builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             .AddJwtBearer(options =>
@@ -133,6 +139,12 @@ internal class Program
                     OnMessageReceived = context =>
                     {
                         var token = context.Request.Cookies["access_token"];
+                        if (string.IsNullOrEmpty(token) &&
+                            (context.HttpContext.Request.Path.StartsWithSegments("/hubs") ||
+                             context.HttpContext.Request.Path.StartsWithSegments("/api/hubs")))
+                        {
+                            token = context.Request.Query["access_token"];
+                        }
                         if (!string.IsNullOrEmpty(token)) context.Token = token;
                         return Task.CompletedTask;
                     },
@@ -283,6 +295,8 @@ internal class Program
         app.UseAuthorization();
 
         app.MapControllers();
+        app.MapHub<InventoryHub>("/hubs/inventory");
+        app.MapHub<InventoryHub>("/api/hubs/inventory");
 
 
         // --- INTERCEPTOR DE ARRANQUE EXITOSO ---
@@ -300,7 +314,7 @@ internal class Program
             Console.ResetColor();
 
             Console.WriteLine("Running...");
-            Console.WriteLine("version 3.7.9\n");
+            Console.WriteLine("version 3.8.2\n");
 
             // --- LEEMOS Y MOSTRAMOS LOS PUERTOS ACTIVOS ---
             Console.ForegroundColor = ConsoleColor.Yellow;

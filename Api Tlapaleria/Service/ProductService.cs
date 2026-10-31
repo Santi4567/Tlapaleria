@@ -1,4 +1,4 @@
-﻿using Api_Tlapaleria.Data;
+using Api_Tlapaleria.Data;
 using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Models;
 using Microsoft.EntityFrameworkCore;
@@ -11,11 +11,13 @@ namespace Api_Tlapaleria.Services
     {
         private readonly TlapaleriaContext _context;
         private readonly IBrandService _brandService;
+        private readonly IStockReservationService _stockReservationService;
 
-        public ProductService(TlapaleriaContext context, IBrandService brandService)
+        public ProductService(TlapaleriaContext context, IBrandService brandService, IStockReservationService stockReservationService)
         {
             _context = context;
             _brandService = brandService;
+            _stockReservationService = stockReservationService;
         }
 
         //POST: Crear un nuevo registro en la tabla de Productos
@@ -140,6 +142,7 @@ namespace Api_Tlapaleria.Services
             if (product == null)
                 throw new Exception($"El producto con ID {id} no fue encontrado.");
 
+            _stockReservationService.PopulateReservedStock(product);
             return product;
         }
 
@@ -185,6 +188,7 @@ namespace Api_Tlapaleria.Services
                 .Take(20) // Subimos de 10 a 20 para que tengas mejor visibilidad en familias grandes de tornillería/herramienta
                 .ToListAsync();
 
+            _stockReservationService.PopulateReservedStock(resultados);
             return resultados;
         }
 
@@ -203,6 +207,8 @@ namespace Api_Tlapaleria.Services
                 .Skip((pageNumber - 1) * pageSize)
                 .Take(pageSize)
                 .ToListAsync();
+
+            _stockReservationService.PopulateReservedStock(productos);
 
             return new PagedResponse<Product>
             {

@@ -1,4 +1,4 @@
-﻿using Api_Tlapaleria.Data;
+using Api_Tlapaleria.Data;
 using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Enums; // <-- Importación del Enum
 using Api_Tlapaleria.Models;
@@ -9,10 +9,12 @@ namespace Api_Tlapaleria.Services
     public class ReturnService : IReturnService
     {
         private readonly TlapaleriaContext _context;
+        private readonly IStockReservationService _stockReservationService;
 
-        public ReturnService(TlapaleriaContext context)
+        public ReturnService(TlapaleriaContext context, IStockReservationService stockReservationService)
         {
             _context = context;
+            _stockReservationService = stockReservationService;
         }
 
         // GET: Obtener todos los reembolsos usando paginacion
@@ -78,6 +80,8 @@ namespace Api_Tlapaleria.Services
                     CreatedAt = DateTime.Now
                 };
 
+                var productosActualizados = new Dictionary<int, decimal>();
+
                 // 2. Procesa cada producto
                 foreach (var item in dto.Details)
                 {
@@ -131,6 +135,7 @@ namespace Api_Tlapaleria.Services
                                 CreatedAt = DateTime.Now
                             };
                             _context.InventoryMovements.Add(movimientoKardex);
+                            productosActualizados[productoBase.Id] = productoBase.CurrentStock;
                         }
                     }
                 }
@@ -156,6 +161,11 @@ namespace Api_Tlapaleria.Services
                 _context.Returns.Add(devolucion);
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
+
+                foreach (var (productId, nuevoStock) in productosActualizados)
+                {
+                    await _stockReservationService.BroadcastStockUpdateAsync(productId, nuevoStock);
+                }
 
                 await _context.Entry(devolucion).Reference(d => d.User).LoadAsync();
                 await _context.Entry(devolucion).Reference(d => d.Sale).LoadAsync();

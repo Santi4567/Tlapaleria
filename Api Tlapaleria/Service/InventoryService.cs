@@ -1,4 +1,4 @@
-﻿using Api_Tlapaleria.Data;
+using Api_Tlapaleria.Data;
 using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Enums;
 using Api_Tlapaleria.Models;
@@ -9,10 +9,12 @@ namespace Api_Tlapaleria.Services
     public class InventoryService : IInventoryService
     {
         private readonly TlapaleriaContext _context;
+        private readonly IStockReservationService _stockReservationService;
 
-        public InventoryService(TlapaleriaContext context)
+        public InventoryService(TlapaleriaContext context, IStockReservationService stockReservationService)
         {
             _context = context;
+            _stockReservationService = stockReservationService;
         }
 
         public async Task<InventoryMovement> RegisterMovementAsync(CreateInventoryMovementDto datos, int userId)
@@ -73,6 +75,11 @@ namespace Api_Tlapaleria.Services
                 // 6. Guardamos los cambios. Si hay conflicto de concurrencia, saltará al catch.
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
+
+                if (producto.IsInventoryTracked)
+                {
+                    await _stockReservationService.BroadcastStockUpdateAsync(producto.Id, nuevoStock);
+                }
 
                 // Cargamos info extra para la respuesta
                 await _context.Entry(movimiento).Reference(m => m.Product).LoadAsync();

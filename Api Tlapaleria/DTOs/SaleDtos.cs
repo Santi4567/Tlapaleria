@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 
 namespace Api_Tlapaleria.DTOs
 {
@@ -24,5 +24,7 @@ namespace Api_Tlapaleria.DTOs
         [Required]
         [MinLength(1)]
         public List<CreateSaleDetailDto> Details { get; set; } = new List<CreateSaleDetailDto>();
+
+        public string? ConnectionId { get; set; }
     }
 }

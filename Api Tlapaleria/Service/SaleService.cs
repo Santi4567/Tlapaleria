@@ -1,4 +1,4 @@
-﻿using Api_Tlapaleria.Data;
+using Api_Tlapaleria.Data;
 using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Enums;
 using Api_Tlapaleria.Models;
@@ -12,10 +12,12 @@ namespace Api_Tlapaleria.Services
     public class SaleService : ISaleService
     {
         private readonly TlapaleriaContext _context;
+        private readonly IStockReservationService _stockReservationService;
 
-        public SaleService(TlapaleriaContext context)
+        public SaleService(TlapaleriaContext context, IStockReservationService stockReservationService)
         {
             _context = context;
+            _stockReservationService = stockReservationService;
         }
 
         //POST: Crear una nueva venta 
@@ -39,6 +41,8 @@ namespace Api_Tlapaleria.Services
                     IsActive = true,
                     CreatedAt = DateTime.Now
                 };
+
+                var itemsParaNotificar = new List<(int ProductId, int PresentationId, decimal QuantitySold, decimal NewCurrentStock)>();
 
                 foreach (var item in saleDto.Details)
                 {
@@ -71,6 +75,12 @@ namespace Api_Tlapaleria.Services
                     {
                         if (presentacion.Product.CurrentStock < cantidadBaseARestar)
                             throw new Exception($"Stock insuficiente. Quieres vender {item.Quantity} '{presentacion.Name}' (equivale a {cantidadBaseARestar} unidades base), pero solo hay {presentacion.Product.CurrentStock} en stock.");
+
+                        decimal reservadoEnOtrasCajas = _stockReservationService.GetReservedStockExcluding(presentacion.Product.Id, userId, saleDto.ConnectionId);
+                        decimal disponibleEnAnaquel = presentacion.Product.CurrentStock - reservadoEnOtrasCajas;
+
+                        if (disponibleEnAnaquel < cantidadBaseARestar)
+                            throw new Exception($"Stock apartado en otra caja. Quieres vender {item.Quantity} '{presentacion.Name}' ({cantidadBaseARestar} {presentacion.Product.UnitOfMeasure}), pero solo hay {Math.Max(0, disponibleEnAnaquel)} disponibles en anaquel ({reservadoEnOtrasCajas} apartados en otra caja).");
                     }
 
                     // 3. ARMAMOS LA LIBRETA (Ticket)
@@ -111,6 +121,7 @@ namespace Api_Tlapaleria.Services
                         };
 
                         _context.InventoryMovements.Add(movimientoKardex);
+                        itemsParaNotificar.Add((presentacion.Product.Id, presentacion.Id, item.Quantity, presentacion.Product.CurrentStock));
                     }
                 }
 
@@ -149,6 +160,11 @@ namespace Api_Tlapaleria.Services
                 _context.Sales.Add(venta);
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
+
+                if (itemsParaNotificar.Count > 0)
+                {
+                    await _stockReservationService.ConsumeReservationsOnSaleAsync(userId, saleDto.ConnectionId, itemsParaNotificar);
+                }
 
                 await _context.Entry(venta).Reference(v => v.User).LoadAsync();
                 return venta; // <-- El return que el compilador no encontraba
