@@ -1,4 +1,4 @@
-﻿using Api_Tlapaleria.Attributes;
+using Api_Tlapaleria.Attributes;
 using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Models;
 using Api_Tlapaleria.Services;
@@ -140,6 +140,14 @@ namespace Api_Tlapaleria.Controllers
         {
             var recordatorios = await _expenseService.GetPendingRemindersAsync();
             return Ok(ApiResponse<List<PaymentReminder>>.Exito(recordatorios));
+        }
+
+        [HttpPut("reminders/{id}/read")]
+        [RequierePermiso("view.expenses")]
+        public async Task<ActionResult<ApiResponse<bool>>> MarkReminderAsRead(int id)
+        {
+            var actualizado = await _expenseService.MarkReminderAsReadAsync(id);
+            return Ok(ApiResponse<bool>.Exito(actualizado, "Recordatorio marcado como leído."));
         }
     }
 }

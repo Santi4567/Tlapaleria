@@ -1,4 +1,4 @@
-﻿using Api_Tlapaleria.DTOs;
+using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Models;
 
 namespace Api_Tlapaleria.Services
@@ -20,5 +20,6 @@ namespace Api_Tlapaleria.Services
         Task<List<ExpenseCategory>> GetExpenseCategoriesAsync(bool? isActive = true);
         Task<PagedResponse<PaymentSchedule>> GetPaymentSchedulesAsync(int pageNumber, int pageSize, int? accountsPayableId, string? status, DateTime? startDate, DateTime? endDate);
         Task<List<PaymentReminder>> GetPendingRemindersAsync();
+        Task<bool> MarkReminderAsReadAsync(int id);
     }
 }

@@ -1,4 +1,4 @@
-﻿using Api_Tlapaleria.Data;
+using Api_Tlapaleria.Data;
 using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Enums;
 using Api_Tlapaleria.Models;
@@ -131,24 +131,29 @@ namespace Api_Tlapaleria.Services
                 if (!existeProveedor) throw new Exception("El proveedor no existe.");
             }
 
-            // Si el egreso trae accounts_payable_id, validar que exista y esté activa
-            if (dto.AccountsPayableId.HasValue)
-            {
-                bool existeDeuda = await _context.AccountsPayables.AnyAsync(a => a.Id == dto.AccountsPayableId.Value && a.IsActive);
-                if (!existeDeuda) throw new Exception("La cuenta por pagar no existe o está inactiva.");
-            }
-
             // Si además trae schedule_id, validar que esa cuota pertenezca
             // exactamente a esa cuenta por pagar (evita marcar como Pagado
             // una cuota de una deuda distinta a la que se está abonando)
             if (dto.ScheduleId.HasValue)
             {
-                bool cuotaCoincide = await _context.PaymentSchedules.AnyAsync(s =>
-                    s.Id == dto.ScheduleId.Value &&
-                    (!dto.AccountsPayableId.HasValue || s.AccountsPayableId == dto.AccountsPayableId.Value));
+                var cuota = await _context.PaymentSchedules
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(s => s.Id == dto.ScheduleId.Value);
 
-                if (!cuotaCoincide)
+                if (cuota == null || (dto.AccountsPayableId.HasValue && cuota.AccountsPayableId != dto.AccountsPayableId.Value))
                     throw new Exception("La cuota indicada no existe o no pertenece a la cuenta por pagar señalada.");
+
+                if (!dto.AccountsPayableId.HasValue)
+                {
+                    dto.AccountsPayableId = cuota.AccountsPayableId;
+                }
+            }
+
+            // Si el egreso trae accounts_payable_id, validar que exista y esté activa
+            if (dto.AccountsPayableId.HasValue)
+            {
+                bool existeDeuda = await _context.AccountsPayables.AnyAsync(a => a.Id == dto.AccountsPayableId.Value && a.IsActive);
+                if (!existeDeuda) throw new Exception("La cuenta por pagar no existe o está inactiva.");
             }
 
             // 2. Armar el objeto
@@ -425,9 +430,24 @@ namespace Api_Tlapaleria.Services
                 .Include(r => r.Schedule)
                 .ThenInclude(s => s.AccountsPayable)
                 .ThenInclude(a => a.Supplier)
-                .Where(r => r.Status == ReminderStatus.Pendiente.ToString() && r.RemindAt <= limiteAlerta)
+                .Where(r => r.Status == ReminderStatus.Pendiente.ToString()
+                    && r.RemindAt <= limiteAlerta
+                    && r.Schedule != null
+                    && r.Schedule.Status != PaymentScheduleStatus.Pagado.ToString()
+                    && r.Schedule.Status != PaymentScheduleStatus.Cancelada.ToString())
                 .OrderBy(r => r.RemindAt)
                 .ToListAsync();
+        }
+
+        public async Task<bool> MarkReminderAsReadAsync(int id)
+        {
+            var recordatorio = await _context.PaymentReminders.FirstOrDefaultAsync(r => r.Id == id);
+            if (recordatorio == null)
+                throw new Exception("El recordatorio no existe.");
+
+            recordatorio.Status = ReminderStatus.Leida.ToString();
+            await _context.SaveChangesAsync();
+            return true;
         }
     }
 }
