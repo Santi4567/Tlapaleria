@@ -1,4 +1,4 @@
-﻿using Api_Tlapaleria.Models;
+using Api_Tlapaleria.Models;
 using Microsoft.EntityFrameworkCore;
 
 namespace Api_Tlapaleria.Data
@@ -33,6 +33,7 @@ namespace Api_Tlapaleria.Data
         public DbSet<PaymentSchedule> PaymentSchedules { get; set; }
         public DbSet<Expense> Expenses { get; set; }
         public DbSet<PaymentReminder> PaymentReminders { get; set; }
+        public DbSet<WorkTask> WorkTasks { get; set; }
         // --- MÓDULO DE EGRESOS ---
 
         protected override void OnModelCreating(ModelBuilder modelBuilder) // <--- Configuracion necesaria para mostrar bien los permisos de los usuarios 
