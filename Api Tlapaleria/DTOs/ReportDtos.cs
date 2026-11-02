@@ -24,6 +24,63 @@ namespace Api_Tlapaleria.DTOs
         public decimal RealProfitAmount { get; set; }
 
         public List<ChartDataPointDto> ChartData { get; set; } = new List<ChartDataPointDto>();
+        public List<FinancialSaleItemDto> Sales { get; set; } = new List<FinancialSaleItemDto>();
+        public List<FinancialReturnItemDto> Returns { get; set; } = new List<FinancialReturnItemDto>();
+        public List<TopSellingProductDto> TopProducts { get; set; } = new List<TopSellingProductDto>();
+    }
+
+    public class FinancialSaleItemDto
+    {
+        public int SaleId { get; set; }
+        public string Folio { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; }
+        public string CashierName { get; set; } = string.Empty;
+        public string PaymentMethod { get; set; } = string.Empty;
+        public string? PaymentReference { get; set; }
+        public int ItemsCount { get; set; }
+        public decimal GrossAmount { get; set; }
+        public decimal RefundedAmount { get; set; }
+        public decimal NetAmount { get; set; }
+        public decimal RealProfitAmount { get; set; }
+        public bool IsActive { get; set; }
+    }
+
+    public class FinancialReturnItemDetailDto
+    {
+        public int SaleDetailId { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public decimal QuantityReturned { get; set; }
+        public decimal RefundAmount { get; set; }
+    }
+
+    public class FinancialReturnItemDto
+    {
+        public int ReturnId { get; set; }
+        public string ReturnFolio { get; set; } = string.Empty;
+        public int SaleId { get; set; }
+        public string SaleFolio { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; }
+        public string UserName { get; set; } = string.Empty;
+        public string? Reason { get; set; }
+        public decimal TotalRefunded { get; set; }
+        public bool IsFullCancellation { get; set; }
+        public List<FinancialReturnItemDetailDto> Items { get; set; } = new();
+    }
+
+    public class TopSellingProductDto
+    {
+        public int ProductId { get; set; }
+        public int PresentationId { get; set; }
+        public string InternalCode { get; set; } = string.Empty;
+        public string ProductName { get; set; } = string.Empty;
+        public string PresentationName { get; set; } = string.Empty;
+        public string? Brand { get; set; }
+        public int TicketsCount { get; set; }
+        public decimal QuantitySold { get; set; }
+        public decimal QuantityReturned { get; set; }
+        public decimal NetQuantity { get; set; }
+        public decimal NetSalesAmount { get; set; }
+        public decimal RealProfitAmount { get; set; }
     }
 
     // -- Para el reporte de precios de un producto --

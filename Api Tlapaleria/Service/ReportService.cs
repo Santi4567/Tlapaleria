@@ -195,7 +195,198 @@ namespace Api_Tlapaleria.Services
                 });
             }
 
-            // 6. Retornar el objeto final ensamblado
+            // 6. Extraer lista de Ventas, Devoluciones y Productos más vendidos del periodo
+            var rawPeriodSales = await _context.Sales
+                .AsNoTracking()
+                .Where(s => s.CreatedAt >= effectiveStart && s.CreatedAt <= effectiveEnd)
+                .OrderByDescending(s => s.CreatedAt)
+                .Select(s => new
+                {
+                    s.Id,
+                    s.Folio,
+                    s.CreatedAt,
+                    CashierName = s.User != null ? s.User.Name : "Cajero",
+                    s.PaymentMethod,
+                    s.PaymentReference,
+                    ItemsCount = s.Details.Count(),
+                    s.TotalAmount,
+                    TotalCost = s.Details.Sum(d => (decimal?)d.SupplierCostSubtotal) ?? 0m,
+                    s.IsActive
+                })
+                .ToListAsync();
+
+            var periodSaleIds = rawPeriodSales.Select(s => s.Id).ToList();
+
+            var refundsBySale = periodSaleIds.Any()
+                ? await _context.Returns
+                    .AsNoTracking()
+                    .Where(r => periodSaleIds.Contains(r.SaleId))
+                    .GroupBy(r => r.SaleId)
+                    .Select(g => new
+                    {
+                        SaleId = g.Key,
+                        RefundedAmount = g.Sum(x => x.TotalRefunded),
+                        ReturnedCost = g.SelectMany(x => x.Details)
+                            .Sum(rd => (decimal?)(rd.QuantityReturned * rd.SaleDetail!.SupplierPriceAtSale)) ?? 0m
+                    })
+                    .ToDictionaryAsync(x => x.SaleId, x => (x.RefundedAmount, x.ReturnedCost))
+                : new Dictionary<int, (decimal RefundedAmount, decimal ReturnedCost)>();
+
+            var periodSalesList = rawPeriodSales.Select(s =>
+            {
+                bool hasRefund = refundsBySale.TryGetValue(s.Id, out var refData);
+                decimal refunded = hasRefund ? refData.RefundedAmount : 0m;
+                decimal returnedCost = hasRefund ? refData.ReturnedCost : 0m;
+                decimal netAmt = Math.Max(0m, s.TotalAmount - refunded);
+                decimal netSaleCost = Math.Max(0m, s.TotalCost - returnedCost);
+                decimal profit = s.IsActive ? (netAmt - netSaleCost) : 0m;
+
+                return new FinancialSaleItemDto
+                {
+                    SaleId = s.Id,
+                    Folio = s.Folio,
+                    CreatedAt = s.CreatedAt,
+                    CashierName = s.CashierName,
+                    PaymentMethod = s.PaymentMethod,
+                    PaymentReference = s.PaymentReference,
+                    ItemsCount = s.ItemsCount,
+                    GrossAmount = s.TotalAmount,
+                    RefundedAmount = refunded,
+                    NetAmount = s.IsActive ? netAmt : 0m,
+                    RealProfitAmount = profit,
+                    IsActive = s.IsActive
+                };
+            }).ToList();
+
+            var periodReturnsList = await _context.Returns
+                .AsNoTracking()
+                .Where(r => r.CreatedAt >= effectiveStart && r.CreatedAt <= effectiveEnd)
+                .OrderByDescending(r => r.CreatedAt)
+                .Select(r => new FinancialReturnItemDto
+                {
+                    ReturnId = r.Id,
+                    ReturnFolio = r.ReturnFolio,
+                    SaleId = r.SaleId,
+                    SaleFolio = r.Sale != null ? r.Sale.Folio : string.Empty,
+                    CreatedAt = r.CreatedAt,
+                    UserName = r.User != null ? r.User.Name : "Usuario",
+                    Reason = r.Reason,
+                    TotalRefunded = r.TotalRefunded,
+                    IsFullCancellation = r.Sale != null && !r.Sale.IsActive,
+                    Items = r.Details.Select(rd => new FinancialReturnItemDetailDto
+                    {
+                        SaleDetailId = rd.SaleDetailId,
+                        ProductName = rd.SaleDetail != null ? rd.SaleDetail.ProductName : "Producto",
+                        QuantityReturned = rd.QuantityReturned,
+                        RefundAmount = rd.RefundAmount
+                    }).ToList()
+                })
+                .ToListAsync();
+
+            var rawPeriodDetails = await (
+                from sd in _context.SaleDetails.AsNoTracking()
+                join s in _context.Sales.AsNoTracking() on sd.SaleId equals s.Id
+                join p in _context.Products.AsNoTracking() on sd.ProductId equals p.Id
+                join pp in _context.ProductPresentations.AsNoTracking() on sd.PresentationId equals pp.Id
+                where s.IsActive && sd.IsActive && s.CreatedAt >= effectiveStart && s.CreatedAt <= effectiveEnd
+                select new
+                {
+                    SaleDetailId = sd.Id,
+                    SaleId = sd.SaleId,
+                    ProductId = p.Id,
+                    PresentationId = pp.Id,
+                    InternalCode = p.InternalCode,
+                    ProductName = p.Name,
+                    PresentationName = pp.Name,
+                    Brand = sd.Brand ?? p.Brand,
+                    Quantity = sd.Quantity,
+                    Subtotal = sd.Subtotal,
+                    SupplierPriceAtSale = sd.SupplierPriceAtSale,
+                    CatalogSupplierPrice = pp.SupplierPrice
+                }
+            ).ToListAsync();
+
+            var topProductsList = new List<TopSellingProductDto>();
+            if (rawPeriodDetails.Any())
+            {
+                var detailIds = rawPeriodDetails.Select(d => d.SaleDetailId).ToList();
+                var returnsByDetailId = await _context.ReturnDetails
+                    .AsNoTracking()
+                    .Where(rd => detailIds.Contains(rd.SaleDetailId))
+                    .GroupBy(rd => rd.SaleDetailId)
+                    .Select(g => new
+                    {
+                        SaleDetailId = g.Key,
+                        CantDevuelta = g.Sum(x => x.QuantityReturned),
+                        MontoDevuelto = g.Sum(x => x.RefundAmount)
+                    })
+                    .ToDictionaryAsync(x => x.SaleDetailId);
+
+                topProductsList = rawPeriodDetails
+                    .GroupBy(d => new
+                    {
+                        d.ProductId,
+                        d.PresentationId,
+                        d.InternalCode,
+                        d.ProductName,
+                        d.PresentationName
+                    })
+                    .Select(g =>
+                    {
+                        int ticketsCount = g
+                            .Where(d =>
+                            {
+                                var cantDev = returnsByDetailId.TryGetValue(d.SaleDetailId, out var r) ? r.CantDevuelta : 0m;
+                                return (d.Quantity - cantDev) > 0m;
+                            })
+                            .Select(d => d.SaleId)
+                            .Distinct()
+                            .Count();
+
+                        decimal totalSold = 0m;
+                        decimal totalReturned = 0m;
+                        decimal netSalesAmt = 0m;
+                        decimal realProfitAmt = 0m;
+
+                        foreach (var d in g)
+                        {
+                            var cantDev = returnsByDetailId.TryGetValue(d.SaleDetailId, out var r) ? r.CantDevuelta : 0m;
+                            var montoDev = r != null ? r.MontoDevuelto : 0m;
+
+                            decimal effectiveQty = d.Quantity - cantDev;
+                            decimal unitCost = d.SupplierPriceAtSale > 0m ? d.SupplierPriceAtSale : d.CatalogSupplierPrice;
+                            decimal rowCost = Math.Round(effectiveQty * unitCost, 2, MidpointRounding.AwayFromZero);
+                            decimal rowNetSales = d.Subtotal - montoDev;
+
+                            totalSold += d.Quantity;
+                            totalReturned += cantDev;
+                            netSalesAmt += rowNetSales;
+                            realProfitAmt += (rowNetSales - rowCost);
+                        }
+
+                        return new TopSellingProductDto
+                        {
+                            ProductId = g.Key.ProductId,
+                            PresentationId = g.Key.PresentationId,
+                            InternalCode = g.Key.InternalCode,
+                            ProductName = g.Key.ProductName,
+                            PresentationName = g.Key.PresentationName,
+                            Brand = g.Last().Brand,
+                            TicketsCount = ticketsCount,
+                            QuantitySold = totalSold,
+                            QuantityReturned = totalReturned,
+                            NetQuantity = totalSold - totalReturned,
+                            NetSalesAmount = netSalesAmt,
+                            RealProfitAmount = realProfitAmt
+                        };
+                    })
+                    .Where(x => x.NetQuantity > 0m)
+                    .OrderByDescending(x => x.NetQuantity)
+                    .ThenByDescending(x => x.NetSalesAmount)
+                    .ToList();
+            }
+
+            // 7. Retornar el objeto final ensamblado
             return new FinancialReportDto
             {
                 TotalSalesCount = totalSalesCount,
@@ -204,7 +395,10 @@ namespace Api_Tlapaleria.Services
                 NetSalesAmount = grossAmount - returnsAmount,
                 CostOfGoodsSold = netCost,
                 RealProfitAmount = realProfit,
-                ChartData = chartData
+                ChartData = chartData,
+                Sales = periodSalesList,
+                Returns = periodReturnsList,
+                TopProducts = topProductsList
             };
         }
 
