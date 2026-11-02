@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
 
@@ -22,7 +22,6 @@ namespace Api_Tlapaleria.Models
         [Required]
         public int SaleDetailId { get; set; }
 
-        [JsonIgnore]
         [ForeignKey("SaleDetailId")]
         public SaleDetail? SaleDetail { get; set; }
 

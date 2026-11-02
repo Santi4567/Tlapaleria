@@ -25,12 +25,15 @@ namespace Api_Tlapaleria.Services
                 .AsNoTracking() // <-- OPTIMIZACIÓN DE MEMORIA
                 .Include(r => r.User)
                 .Include(r => r.Sale)
+                .Include(r => r.Details)
+                    .ThenInclude(d => d.SaleDetail)
                 .AsQueryable();
 
             if (!string.IsNullOrWhiteSpace(search))
             {
                 query = query.Where(r =>
                     r.ReturnFolio.Contains(search) ||
+                    (r.Sale != null && r.Sale.Folio.Contains(search)) ||
                     (r.Reason != null && r.Reason.Contains(search))
                 );
             }
@@ -100,7 +103,14 @@ namespace Api_Tlapaleria.Services
                     if (item.QuantityReturned > cantidadDisponibleParaDevolver)
                         throw new InvalidOperationException($"Intento de fraude o error detectado en '{renglonOriginal.ProductName}'. Quieres devolver {item.QuantityReturned}, pero solo quedan {cantidadDisponibleParaDevolver} unidades disponibles.");
 
-                    decimal dineroAReembolsar = item.QuantityReturned * renglonOriginal.UnitPrice;
+                    // Actualización de Almacén y Kardex
+                    var productoBase = await _context.Products.FindAsync(renglonOriginal.ProductId);
+                    if (productoBase != null && !productoBase.AllowFractions && (item.QuantityReturned % 1 != 0))
+                    {
+                        throw new InvalidOperationException($"El producto '{renglonOriginal.ProductName}' no permite devolver cantidades con decimales ({item.QuantityReturned}).");
+                    }
+
+                    decimal dineroAReembolsar = Math.Round(item.QuantityReturned * renglonOriginal.UnitPrice, 2, MidpointRounding.AwayFromZero);
                     devolucion.TotalRefunded += dineroAReembolsar;
 
                     var detalleDevolucion = new ReturnDetail
@@ -111,8 +121,6 @@ namespace Api_Tlapaleria.Services
                     };
                     devolucion.Details.Add(detalleDevolucion);
 
-                    // Actualización de Almacén y Kardex
-                    var productoBase = await _context.Products.FindAsync(renglonOriginal.ProductId);
                     if (productoBase != null)
                     {
                         // LÓGICA HÍBRIDA: Solo regresamos stock si el producto lleva rastreo
@@ -186,6 +194,7 @@ namespace Api_Tlapaleria.Services
                 .AsNoTracking() // <-- OPTIMIZACIÓN DE MEMORIA
                 .Include(r => r.User)
                 .Include(r => r.Details)
+                    .ThenInclude(d => d.SaleDetail)
                 .Where(r => r.SaleId == saleId)
                 .OrderByDescending(r => r.CreatedAt)
                 .ToListAsync();

@@ -185,6 +185,7 @@ namespace Api_Tlapaleria.Services
             // Empezamos armando la consulta, incluyendo al usuario para saber quién cobró
             var query = _context.Sales
                 .Include(s => s.User)
+                .Include(s => s.Details)
                 .AsQueryable();
 
             // Si el frontend nos mandó algo en la caja de búsqueda, filtramos
