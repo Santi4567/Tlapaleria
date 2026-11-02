@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
+using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Serialization;
 
@@ -27,6 +27,11 @@ namespace Api_Tlapaleria.Models
         [JsonIgnore]
         [ForeignKey("PresentationId")]
         public ProductPresentation? Presentation { get; set; }
+
+        public int? SupplierId { get; set; }
+        [JsonIgnore]
+        [ForeignKey("SupplierId")]
+        public Supplier? Supplier { get; set; }
 
         // --- LA LIBRETA CON LAPICERO (Snapshot) ---
         [Required]

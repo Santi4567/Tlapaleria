@@ -1,4 +1,4 @@
-﻿namespace Api_Tlapaleria.DTOs
+namespace Api_Tlapaleria.DTOs
 {
     // Representa un punto individual en tu gráfica (por ejemplo, un día)
     public class ChartDataPointDto
@@ -68,6 +68,40 @@
         public decimal TotalChargedClient { get; set; }
         public decimal TotalProfitAmount { get; set; }
         public List<SupplierSalesReportItemDto> Suppliers { get; set; } = new();
+    }
+
+    // -- Desglose por producto/presentación de lo vendido de un proveedor específico --
+    public class SupplierProductSalesItemDto
+    {
+        public int ProductId { get; set; }
+        public int PresentationId { get; set; }
+        public string InternalCode { get; set; } = string.Empty;
+        public string ProductName { get; set; } = string.Empty;
+        public string PresentationName { get; set; } = string.Empty;
+        public string? Brand { get; set; }
+        public int EffectiveTickets { get; set; }
+        public decimal QuantitySold { get; set; }
+        public decimal QuantityReturned { get; set; }
+        public decimal NetQuantity { get; set; }
+        public decimal UnitSupplierCost { get; set; }
+        public decimal UnitPublicPrice { get; set; }
+        public decimal SupplierAmount { get; set; }      // DineroProveedor
+        public decimal TotalChargedClient { get; set; }  // TotalCobradoCliente
+        public decimal ProfitAmount { get; set; }        // TuGanancia
+    }
+
+    public class SupplierSalesDetailResponseDto
+    {
+        public int SupplierId { get; set; }
+        public string SupplierName { get; set; } = string.Empty;
+        public DateTime? StartDate { get; set; }
+        public DateTime? EndDate { get; set; }
+        public int EffectiveTickets { get; set; }
+        public decimal TotalNetQuantity { get; set; }
+        public decimal TotalSupplierAmount { get; set; }
+        public decimal TotalChargedClient { get; set; }
+        public decimal TotalProfitAmount { get; set; }
+        public List<SupplierProductSalesItemDto> Products { get; set; } = new();
     }
 
     // -- FIN de  Reporte de precios para los productos ---

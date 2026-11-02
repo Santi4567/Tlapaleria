@@ -1,4 +1,4 @@
-﻿using Api_Tlapaleria.DTOs;
+using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Enums;
 
 namespace Api_Tlapaleria.Services
@@ -16,5 +16,8 @@ namespace Api_Tlapaleria.Services
 
         // --- Reporte de ventas y separación de dinero por proveedor ---
         Task<SupplierSalesReportResponseDto> GetSupplierSalesReportAsync(DateTime? startDate = null, DateTime? endDate = null, SupplierReportPeriod periodType = SupplierReportPeriod.AllTime);
+
+        // --- Desglose de productos vendidos de un proveedor específico ---
+        Task<SupplierSalesDetailResponseDto> GetSupplierSalesDetailAsync(int supplierId, DateTime? startDate = null, DateTime? endDate = null, SupplierReportPeriod periodType = SupplierReportPeriod.AllTime);
     }
 }

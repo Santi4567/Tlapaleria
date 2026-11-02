@@ -1,4 +1,4 @@
-﻿using Api_Tlapaleria.Attributes;
+using Api_Tlapaleria.Attributes;
 using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Enums;
 using Api_Tlapaleria.Models;
@@ -55,6 +55,19 @@ namespace Api_Tlapaleria.Controllers
         {
             var report = await _reportService.GetSupplierSalesReportAsync(startDate, endDate, periodType);
             return Ok(ApiResponse<SupplierSalesReportResponseDto>.Exito(report, "Reporte de ventas por proveedor generado exitosamente."));
+        }
+
+        // -- Desglose de ventas por producto/presentación de un proveedor específico --
+        [HttpGet("suppliers-sales/{supplierId}")]
+        [RequierePermiso("view.reports")]
+        public async Task<ActionResult<ApiResponse<SupplierSalesDetailResponseDto>>> GetSupplierSalesDetail(
+            int supplierId,
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null,
+            [FromQuery] SupplierReportPeriod periodType = SupplierReportPeriod.AllTime)
+        {
+            var detail = await _reportService.GetSupplierSalesDetailAsync(supplierId, startDate, endDate, periodType);
+            return Ok(ApiResponse<SupplierSalesDetailResponseDto>.Exito(detail, "Desglose de ventas del proveedor generado exitosamente."));
         }
     }
 }

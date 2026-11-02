@@ -89,6 +89,7 @@ namespace Api_Tlapaleria.Services
                     {
                         ProductId = presentacion.Product.Id,
                         PresentationId = presentacion.Id,
+                        SupplierId = presentacion.Product.SupplierId,
                         ProductName = $"{presentacion.Product.Name} - {presentacion.Name}",
                         Brand = presentacion.Product.Brand,
                         Quantity = item.Quantity,

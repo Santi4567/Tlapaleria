@@ -1,4 +1,4 @@
-﻿using Api_Tlapaleria.Data;
+using Api_Tlapaleria.Data;
 using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Enums;
 using Microsoft.EntityFrameworkCore;
@@ -481,7 +481,7 @@ namespace Api_Tlapaleria.Services
                 from sd in detailsQuery
                 join p in _context.Products on sd.ProductId equals p.Id
                 join pp in _context.ProductPresentations on sd.PresentationId equals pp.Id
-                join sup in _context.Suppliers on p.SupplierId equals sup.Id
+                join sup in _context.Suppliers on (sd.SupplierId ?? p.SupplierId) equals sup.Id
                 select new
                 {
                     SaleDetailId = sd.Id,
@@ -576,6 +576,237 @@ namespace Api_Tlapaleria.Services
                 TotalChargedClient = suppliersReport.Sum(x => x.TotalChargedClient),
                 TotalProfitAmount = suppliersReport.Sum(x => x.ProfitAmount),
                 Suppliers = suppliersReport
+            };
+        }
+
+        // -- Desglose de productos/presentaciones vendidos de un proveedor específico --
+        public async Task<SupplierSalesDetailResponseDto> GetSupplierSalesDetailAsync(
+            int supplierId,
+            DateTime? startDate = null,
+            DateTime? endDate = null,
+            SupplierReportPeriod periodType = SupplierReportPeriod.AllTime)
+        {
+            // 1. Validar que el proveedor exista
+            var supplier = await _context.Suppliers
+                .AsNoTracking()
+                .FirstOrDefaultAsync(s => s.Id == supplierId);
+
+            if (supplier == null)
+                throw new Exception($"El proveedor con ID {supplierId} no fue encontrado.");
+
+            var now = DateTime.Now;
+            DateTime? effectiveStart = null;
+            DateTime? effectiveEnd = null;
+
+            // 2. Determinar el rango de fechas (misma lógica exacta que el reporte general)
+            switch (periodType)
+            {
+                case SupplierReportPeriod.Day:
+                    var targetDay = startDate?.Date ?? now.Date;
+                    effectiveStart = targetDay;
+                    effectiveEnd = targetDay.AddDays(1).AddTicks(-1);
+                    break;
+
+                case SupplierReportPeriod.Week:
+                    var refDate = startDate?.Date ?? now.Date;
+                    int diff = (7 + (refDate.DayOfWeek - DayOfWeek.Monday)) % 7;
+                    effectiveStart = refDate.AddDays(-1 * diff);
+                    effectiveEnd = effectiveStart.Value.AddDays(7).AddTicks(-1);
+                    break;
+
+                case SupplierReportPeriod.Month:
+                    var targetMonth = startDate ?? now;
+                    effectiveStart = new DateTime(targetMonth.Year, targetMonth.Month, 1);
+                    effectiveEnd = effectiveStart.Value.AddMonths(1).AddTicks(-1);
+                    break;
+
+                case SupplierReportPeriod.Year:
+                    var targetYear = startDate?.Year ?? now.Year;
+                    effectiveStart = new DateTime(targetYear, 1, 1);
+                    effectiveEnd = new DateTime(targetYear, 12, 31, 23, 59, 59, 999);
+                    break;
+
+                case SupplierReportPeriod.AllTime:
+                    effectiveStart = null;
+                    effectiveEnd = null;
+                    break;
+
+                case SupplierReportPeriod.CustomRange:
+                default:
+                    if (startDate.HasValue || endDate.HasValue)
+                    {
+                        var start = startDate?.Date ?? endDate!.Value.Date;
+                        var end = endDate?.Date ?? startDate!.Value.Date;
+
+                        if (start > end)
+                            (start, end) = (end, start);
+
+                        effectiveStart = start;
+                        effectiveEnd = end.AddDays(1).AddTicks(-1);
+
+                        if ((effectiveEnd.Value - effectiveStart.Value).TotalDays > 731)
+                            throw new Exception("El rango de fechas no puede exceder los 2 años.");
+                    }
+                    break;
+            }
+
+            // 3. Consulta base en SaleDetails para este proveedor específico (usando SupplierId inmutable)
+            var detailsQuery = _context.SaleDetails
+                .Where(sd => sd.IsActive && sd.Sale!.IsActive);
+
+            if (effectiveStart.HasValue && effectiveEnd.HasValue)
+            {
+                detailsQuery = detailsQuery.Where(sd =>
+                    sd.Sale!.CreatedAt >= effectiveStart.Value &&
+                    sd.Sale.CreatedAt <= effectiveEnd.Value);
+            }
+
+            var rawDetails = await (
+                from sd in detailsQuery
+                join p in _context.Products on sd.ProductId equals p.Id
+                join pp in _context.ProductPresentations on sd.PresentationId equals pp.Id
+                where (sd.SupplierId ?? p.SupplierId) == supplierId
+                select new
+                {
+                    SaleDetailId = sd.Id,
+                    SaleId = sd.SaleId,
+                    ProductId = p.Id,
+                    PresentationId = pp.Id,
+                    InternalCode = p.InternalCode,
+                    ProductName = p.Name,
+                    PresentationName = pp.Name,
+                    Brand = sd.Brand ?? p.Brand,
+                    Quantity = sd.Quantity,
+                    UnitPrice = sd.UnitPrice,
+                    Subtotal = sd.Subtotal,
+                    SupplierPriceAtSale = sd.SupplierPriceAtSale,
+                    CatalogSupplierPrice = pp.SupplierPrice
+                }
+            ).ToListAsync();
+
+            if (!rawDetails.Any())
+            {
+                return new SupplierSalesDetailResponseDto
+                {
+                    SupplierId = supplier.Id,
+                    SupplierName = supplier.Name,
+                    StartDate = effectiveStart,
+                    EndDate = effectiveEnd
+                };
+            }
+
+            // 4. Obtener las devoluciones agrupadas por SaleDetailId
+            var saleDetailIds = rawDetails.Select(d => d.SaleDetailId).ToList();
+
+            var returnsByDetail = await _context.ReturnDetails
+                .Where(rd => saleDetailIds.Contains(rd.SaleDetailId))
+                .GroupBy(rd => rd.SaleDetailId)
+                .Select(g => new
+                {
+                    SaleDetailId = g.Key,
+                    CantDevuelta = g.Sum(x => x.QuantityReturned),
+                    MontoDevuelto = g.Sum(x => x.RefundAmount)
+                })
+                .ToDictionaryAsync(x => x.SaleDetailId);
+
+            // 5. Agrupar por Producto + Presentación aplicando exactamente el mismo redondeo por partida
+            int totalEffectiveTickets = rawDetails
+                .Where(d =>
+                {
+                    var cantDev = returnsByDetail.TryGetValue(d.SaleDetailId, out var r) ? r.CantDevuelta : 0m;
+                    return (d.Quantity - cantDev) > 0m;
+                })
+                .Select(d => d.SaleId)
+                .Distinct()
+                .Count();
+
+            var productsReport = rawDetails
+                .GroupBy(d => new
+                {
+                    d.ProductId,
+                    d.PresentationId,
+                    d.InternalCode,
+                    d.ProductName,
+                    d.PresentationName
+                })
+                .Select(g =>
+                {
+                    int effectiveTickets = g
+                        .Where(d =>
+                        {
+                            var cantDev = returnsByDetail.TryGetValue(d.SaleDetailId, out var r) ? r.CantDevuelta : 0m;
+                            return (d.Quantity - cantDev) > 0m;
+                        })
+                        .Select(d => d.SaleId)
+                        .Distinct()
+                        .Count();
+
+                    decimal totalSold = 0m;
+                    decimal totalReturned = 0m;
+                    decimal dineroProveedor = 0m;
+                    decimal totalCobrado = 0m;
+                    decimal tuGanancia = 0m;
+                    decimal lastUnitCost = 0m;
+                    decimal lastPublicPrice = 0m;
+
+                    foreach (var d in g)
+                    {
+                        var cantDev = returnsByDetail.TryGetValue(d.SaleDetailId, out var r) ? r.CantDevuelta : 0m;
+                        var montoDev = r != null ? r.MontoDevuelto : 0m;
+
+                        decimal effectiveQty = d.Quantity - cantDev;
+                        decimal unitCost = d.SupplierPriceAtSale > 0m ? d.SupplierPriceAtSale : d.CatalogSupplierPrice;
+
+                        decimal rowSupplierCost = Math.Round(effectiveQty * unitCost, 2, MidpointRounding.AwayFromZero);
+                        decimal rowNetCharged = d.Subtotal - montoDev;
+                        decimal rowProfit = rowNetCharged - rowSupplierCost;
+
+                        totalSold += d.Quantity;
+                        totalReturned += cantDev;
+                        dineroProveedor += rowSupplierCost;
+                        totalCobrado += rowNetCharged;
+                        tuGanancia += rowProfit;
+                        lastUnitCost = unitCost;
+                        lastPublicPrice = d.UnitPrice;
+                    }
+
+                    decimal netQty = totalSold - totalReturned;
+
+                    return new SupplierProductSalesItemDto
+                    {
+                        ProductId = g.Key.ProductId,
+                        PresentationId = g.Key.PresentationId,
+                        InternalCode = g.Key.InternalCode,
+                        ProductName = g.Key.ProductName,
+                        PresentationName = g.Key.PresentationName,
+                        Brand = g.Last().Brand,
+                        EffectiveTickets = effectiveTickets,
+                        QuantitySold = totalSold,
+                        QuantityReturned = totalReturned,
+                        NetQuantity = netQty,
+                        UnitSupplierCost = lastUnitCost,
+                        UnitPublicPrice = lastPublicPrice,
+                        SupplierAmount = dineroProveedor,
+                        TotalChargedClient = totalCobrado,
+                        ProfitAmount = tuGanancia
+                    };
+                })
+                .Where(x => x.NetQuantity > 0m)
+                .OrderByDescending(x => x.SupplierAmount)
+                .ToList();
+
+            return new SupplierSalesDetailResponseDto
+            {
+                SupplierId = supplier.Id,
+                SupplierName = supplier.Name,
+                StartDate = effectiveStart,
+                EndDate = effectiveEnd,
+                EffectiveTickets = totalEffectiveTickets,
+                TotalNetQuantity = productsReport.Sum(x => x.NetQuantity),
+                TotalSupplierAmount = productsReport.Sum(x => x.SupplierAmount),
+                TotalChargedClient = productsReport.Sum(x => x.TotalChargedClient),
+                TotalProfitAmount = productsReport.Sum(x => x.ProfitAmount),
+                Products = productsReport
             };
         }
     }
