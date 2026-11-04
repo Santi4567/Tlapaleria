@@ -126,6 +126,48 @@ namespace Api_Tlapaleria.Services
                     }
                 }
 
+                // ====================================================================================
+                // DESCUENTO (clientes/familiares)
+                // Se calcula sobre la suma de precios de lista y se PRORRATEA entre los renglones,
+                // de modo que cada SaleDetail.Subtotal quede NETO. Así los reportes financieros y
+                // las devoluciones (que reembolsan lo realmente pagado) siguen siendo consistentes.
+                // ====================================================================================
+                decimal subtotalBruto = venta.TotalAmount;
+                decimal descuentoPorcentaje = saleDto.DiscountPercent ?? 0m;
+                decimal descuentoMonto = saleDto.DiscountAmount ?? 0m;
+
+                if (descuentoPorcentaje > 0 && descuentoMonto > 0)
+                    throw new Exception("Aplica el descuento por porcentaje o por monto fijo, no ambos a la vez.");
+
+                if (descuentoPorcentaje > 100m)
+                    throw new Exception("El porcentaje de descuento no puede ser mayor al 100%.");
+
+                if (descuentoPorcentaje > 0)
+                    descuentoMonto = Math.Round(subtotalBruto * descuentoPorcentaje / 100m, 2, MidpointRounding.AwayFromZero);
+
+                if (descuentoMonto > subtotalBruto)
+                    throw new Exception($"El descuento (${descuentoMonto:N2}) no puede ser mayor al total de la venta (${subtotalBruto:N2}).");
+
+                if (descuentoMonto > 0)
+                {
+                    decimal descuentoAsignado = 0m;
+                    for (int i = 0; i < venta.Details.Count; i++)
+                    {
+                        var linea = venta.Details[i];
+                        decimal descuentoLinea = (i == venta.Details.Count - 1)
+                            ? descuentoMonto - descuentoAsignado // la última absorbe el redondeo
+                            : Math.Round(descuentoMonto * linea.Subtotal / subtotalBruto, 2, MidpointRounding.AwayFromZero);
+
+                        linea.DiscountAmount = descuentoLinea;
+                        linea.Subtotal -= descuentoLinea;
+                        descuentoAsignado += descuentoLinea;
+                    }
+
+                    venta.DiscountAmount = descuentoMonto;
+                    venta.DiscountPercent = descuentoPorcentaje;
+                    venta.TotalAmount = subtotalBruto - descuentoMonto;
+                }
+
                 if (venta.PaymentMethod == "Tarjeta" || venta.PaymentMethod == "Transferencia")
                 {
                     if (string.IsNullOrWhiteSpace(venta.PaymentReference))

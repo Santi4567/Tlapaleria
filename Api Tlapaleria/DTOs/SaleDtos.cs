@@ -26,5 +26,12 @@ namespace Api_Tlapaleria.DTOs
         public List<CreateSaleDetailDto> Details { get; set; } = new List<CreateSaleDetailDto>();
 
         public string? ConnectionId { get; set; }
+
+        // DESCUENTO OPCIONAL (requiere permiso 'apply.discounts'). Usar solo uno de los dos.
+        [Range(0, 100, ErrorMessage = "El porcentaje de descuento debe estar entre 0 y 100.")]
+        public decimal? DiscountPercent { get; set; }
+
+        [Range(0, 9999999.99, ErrorMessage = "El monto de descuento no puede ser negativo.")]
+        public decimal? DiscountAmount { get; set; }
     }
 }

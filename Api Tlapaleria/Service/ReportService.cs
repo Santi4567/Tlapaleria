@@ -272,7 +272,7 @@ namespace Api_Tlapaleria.Services
                     UserName = r.User != null ? r.User.Name : "Usuario",
                     Reason = r.Reason,
                     TotalRefunded = r.TotalRefunded,
-                    IsFullCancellation = r.Sale != null && !r.Sale.IsActive,
+                    IsFullCancellation = r.Sale != null && (!r.Sale.IsActive || _context.Returns.Where(x => x.SaleId == r.SaleId).Sum(x => x.TotalRefunded) >= r.Sale.TotalAmount),
                     Items = r.Details.Select(rd => new FinancialReturnItemDetailDto
                     {
                         SaleDetailId = rd.SaleDetailId,

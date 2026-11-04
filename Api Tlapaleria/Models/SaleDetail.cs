@@ -54,7 +54,11 @@ namespace Api_Tlapaleria.Models
 
         [Required]
         [Column(TypeName = "decimal(10,2)")]
-        public decimal Subtotal { get; set; }
+        public decimal Subtotal { get; set; } // Importe NETO del renglón (Quantity * UnitPrice - DiscountAmount)
+
+        // Parte del descuento del ticket asignada a este renglón (prorrateo)
+        [Column(TypeName = "decimal(10,2)")]
+        public decimal DiscountAmount { get; set; } = 0;
 
         // --- COSTO (Snapshot para ganancia real) ---
         [Required]

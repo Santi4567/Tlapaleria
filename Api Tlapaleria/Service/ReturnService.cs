@@ -70,6 +70,20 @@ namespace Api_Tlapaleria.Services
                 if (ticketOriginal == null || !ticketOriginal.IsActive)
                     throw new KeyNotFoundException("El ticket original no existe o ya se encuentra totalmente cancelado.");
 
+                // Validamos que el ticket aún tenga artículos disponibles para devolver
+                decimal totalPiezasCompradas = await _context.SaleDetails
+                    .Where(sd => sd.SaleId == dto.SaleId)
+                    .SumAsync(sd => sd.Quantity);
+
+                decimal totalPiezasYaDevueltas = await _context.ReturnDetails
+                    .Where(rd => _context.SaleDetails.Any(sd => sd.Id == rd.SaleDetailId && sd.SaleId == dto.SaleId))
+                    .SumAsync(rd => rd.QuantityReturned);
+
+                if (totalPiezasYaDevueltas >= totalPiezasCompradas)
+                {
+                    throw new InvalidOperationException("Todos los artículos de este ticket ya fueron devueltos previamente (Devolución Total).");
+                }
+
                 var random = new Random();
                 string folioDevolucion = $"DEV-{DateTime.Now:yyMMddHHmmssfff}-{random.Next(1000, 10000)}";
 
@@ -110,7 +124,15 @@ namespace Api_Tlapaleria.Services
                         throw new InvalidOperationException($"El producto '{renglonOriginal.ProductName}' no permite devolver cantidades con decimales ({item.QuantityReturned}).");
                     }
 
-                    decimal dineroAReembolsar = Math.Round(item.QuantityReturned * renglonOriginal.UnitPrice, 2, MidpointRounding.AwayFromZero);
+                    // El reembolso se calcula sobre lo REALMENTE pagado (Subtotal es neto, ya con descuento prorrateado).
+                    // Si se devuelve lo último que queda del renglón, se reembolsa el remanente exacto para no perder centavos.
+                    decimal dineroYaReembolsado = await _context.ReturnDetails
+                        .Where(rd => rd.SaleDetailId == item.SaleDetailId)
+                        .SumAsync(rd => rd.RefundAmount);
+
+                    decimal dineroAReembolsar = (item.QuantityReturned == cantidadDisponibleParaDevolver)
+                        ? renglonOriginal.Subtotal - dineroYaReembolsado
+                        : Math.Round(item.QuantityReturned * renglonOriginal.Subtotal / renglonOriginal.Quantity, 2, MidpointRounding.AwayFromZero);
                     devolucion.TotalRefunded += dineroAReembolsar;
 
                     var detalleDevolucion = new ReturnDetail
@@ -148,23 +170,8 @@ namespace Api_Tlapaleria.Services
                     }
                 }
 
-                // Lógica de desactivación de ticket completo
-                decimal totalPiezasCompradas = await _context.SaleDetails
-                    .Where(sd => sd.SaleId == dto.SaleId)
-                    .SumAsync(sd => sd.Quantity);
-
-                decimal totalPiezasDevueltasPasadas = await _context.ReturnDetails
-                    .Where(rd => _context.SaleDetails.Any(sd => sd.Id == rd.SaleDetailId && sd.SaleId == dto.SaleId))
-                    .SumAsync(rd => rd.QuantityReturned);
-
-                decimal totalPiezasDevueltasHoy = devolucion.Details.Sum(d => d.QuantityReturned);
-                decimal totalPiezasDevueltas = totalPiezasDevueltasPasadas + totalPiezasDevueltasHoy;
-
-                if (totalPiezasDevueltas >= totalPiezasCompradas)
-                {
-                    ticketOriginal.IsActive = false;
-                    _context.Sales.Update(ticketOriginal);
-                }
+                // La venta original permanece activa (IsActive = true) para registrar limpiamente
+                // el ingreso en la venta y el egreso en la devolución, manteniendo la contabilidad transparente.
 
                 _context.Returns.Add(devolucion);
                 await _context.SaveChangesAsync();
