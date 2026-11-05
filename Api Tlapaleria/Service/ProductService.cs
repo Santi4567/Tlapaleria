@@ -412,6 +412,90 @@ namespace Api_Tlapaleria.Services
             }
         }
 
+        // Actualizar solo precios, proveedor y margen de ganancia
+        public async Task<Product> UpdatePricingAsync(int id, QuickPriceUpdateDto datos, int userIdToken)
+        {
+            using var transaction = await _context.Database.BeginTransactionAsync();
+
+            try
+            {
+                var producto = await _context.Products
+                    .Include(p => p.Presentations)
+                    .Include(p => p.Supplier)
+                    .FirstOrDefaultAsync(p => p.Id == id);
+
+                if (producto == null)
+                    throw new Exception($"No se encontró ningún producto con el ID {id}.");
+
+                if (!producto.IsActive)
+                    throw new Exception("No puedes editar los precios de un producto inactivo. Reactívalo primero.");
+
+                bool existeProveedor = await _context.Suppliers
+                    .AnyAsync(s => s.Id == datos.SupplierId && s.IsActive);
+                if (!existeProveedor)
+                    throw new Exception("El proveedor seleccionado no existe o está inactivo.");
+
+                producto.SupplierId = datos.SupplierId;
+                producto.ProfitMargin = datos.ProfitMargin;
+
+                if (datos.Presentations == null || !datos.Presentations.Any())
+                    throw new Exception("El producto debe tener al menos una presentación.");
+
+                foreach (var presDto in datos.Presentations)
+                {
+                    if (presDto.IsActive && presDto.Price <= 0)
+                        throw new Exception("Las presentaciones activas para venta al público deben tener un precio mayor a $0.");
+
+                    var presExistente = producto.Presentations.FirstOrDefault(p => p.Id == presDto.Id);
+                    if (presExistente == null)
+                        throw new Exception($"La presentación con ID {presDto.Id} no pertenece al producto.");
+
+                    decimal precioAnterior = presExistente.Price;
+                    decimal costoAnterior = presExistente.SupplierPrice;
+
+                    presExistente.Price = presDto.Price;
+                    presExistente.SupplierPrice = presDto.SupplierPrice;
+                    presExistente.IsActive = presDto.IsActive;
+
+                    if (precioAnterior != presExistente.Price && presExistente.Price > 0)
+                    {
+                        _context.PresentationPriceHistories.Add(new PresentationPriceHistory
+                        {
+                            PresentationId = presExistente.Id,
+                            ProductId = producto.Id,
+                            OldPrice = precioAnterior,
+                            NewPrice = presExistente.Price,
+                            UserId = userIdToken
+                        });
+                    }
+
+                    if (costoAnterior != presExistente.SupplierPrice)
+                    {
+                        _context.PresentationSupplierPriceHistories.Add(new PresentationSupplierPriceHistory
+                        {
+                            PresentationId = presExistente.Id,
+                            ProductId = producto.Id,
+                            OldSupplierPrice = costoAnterior,
+                            NewSupplierPrice = presExistente.SupplierPrice,
+                            UserId = userIdToken
+                        });
+                    }
+                }
+
+                producto.UpdatedAt = DateTime.Now;
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                await _context.Entry(producto).Reference(p => p.Supplier).LoadAsync();
+                return producto;
+            }
+            catch (Exception)
+            {
+                await transaction.RollbackAsync();
+                throw;
+            }
+        }
+
         //Eliminar(Desactiavr) Productos 
         public async Task<bool> DeleteProductAsync(int id)
         {
@@ -467,6 +551,7 @@ namespace Api_Tlapaleria.Services
 
             var productosEnRiesgo = await _context.Products
                 .Where(p => p.IsActive
+                         && p.IsInventoryTracked
                          && p.HasExpiration
                          && p.NextExpirationDate != null
                          && p.NextExpirationDate <= limiteAlerta)

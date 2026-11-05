@@ -1,4 +1,4 @@
-﻿using Api_Tlapaleria.Attributes;
+using Api_Tlapaleria.Attributes;
 using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Models;
 using Api_Tlapaleria.Services;
@@ -73,6 +73,16 @@ namespace Api_Tlapaleria.Controllers
             int userIdToken = User.GetUserId();
             var productoActualizado = await _productService.UpdateProductAsync(id, datos, userIdToken);
             return Ok(ApiResponse<Product>.Exito(productoActualizado, "Producto actualizado correctamente"));
+        }
+
+        // PATCH api/products/{id}/pricing -> Actualización rápida de precios, margen y proveedor
+        [HttpPatch("{id:int}/pricing")]
+        [RequierePermiso("edit.products")]
+        public async Task<ActionResult<ApiResponse<Product>>> UpdatePricing(int id, [FromBody] QuickPriceUpdateDto datos)
+        {
+            int userIdToken = User.GetUserId();
+            var producto = await _productService.UpdatePricingAsync(id, datos, userIdToken);
+            return Ok(ApiResponse<Product>.Exito(producto, "Precios y proveedor actualizados exitosamente"));
         }
 
         [HttpDelete("{id}")]

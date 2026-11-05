@@ -37,6 +37,15 @@ namespace Api_Tlapaleria.Controllers
             return Ok(ApiResponse<List<BrandDto>>.Exito(marcas));
         }
 
+        // POST api/brands  -> crear una marca manualmente
+        [HttpPost]
+        [RequierePermiso("add.products")]
+        public async Task<ActionResult<ApiResponse<BrandDto>>> Create([FromBody] CreateBrandDto datos)
+        {
+            var marca = await _brandService.GetOrCreateAsync(datos.Name);
+            return Ok(ApiResponse<BrandDto>.Exito(new BrandDto(marca.Id, marca.Name), "Marca registrada correctamente"));
+        }
+
         // PUT api/brands/5  -> corregir el nombre (Trupper -> Truper)
         [HttpPut("{id:int}")]
         [RequierePermiso("edit.products")]

@@ -265,5 +265,174 @@ namespace Api_Tlapaleria.Services
 
             return ticket;
         }
+
+        // Resumen operativo diario para el Dashboard / HomeScreen
+        public async Task<DashboardSummaryDto> GetDashboardSummaryAsync(int userId, bool canViewAllSales)
+        {
+            var now = DateTime.Now;
+            var todayStart = now.Date;
+            var todayEnd = now.Date.AddDays(1).AddTicks(-1);
+
+            // 1. Consulta base de ventas de hoy
+            var salesQuery = _context.Sales
+                .AsNoTracking()
+                .Where(s => s.IsActive && s.CreatedAt >= todayStart && s.CreatedAt <= todayEnd);
+
+            var returnsQuery = _context.Returns
+                .AsNoTracking()
+                .Where(r => r.CreatedAt >= todayStart && r.CreatedAt <= todayEnd);
+
+            if (!canViewAllSales)
+            {
+                salesQuery = salesQuery.Where(s => s.UserId == userId);
+                returnsQuery = returnsQuery.Where(r => r.UserId == userId);
+            }
+
+            // Traemos las ventas de hoy con solo las columnas necesarias para calcular montos y agrupar en memoria
+            var salesList = await salesQuery
+                .Select(s => new
+                {
+                    s.Id,
+                    s.TotalAmount,
+                    PaymentMethod = s.PaymentMethod ?? "Efectivo"
+                })
+                .ToListAsync();
+
+            var grossSales = salesList.Sum(s => s.TotalAmount);
+            var totalTicketsCount = salesList.Count;
+
+            // Reembolsos de hoy
+            var totalRefunded = await returnsQuery
+                .Select(r => (decimal?)r.TotalRefunded)
+                .SumAsync() ?? 0m;
+
+            var netSales = Math.Max(0m, grossSales - totalRefunded);
+
+            // Desglose por método de pago agrupado en memoria
+            var paymentMethods = salesList
+                .GroupBy(s => s.PaymentMethod)
+                .Select(g => new PaymentMethodSummaryDto
+                {
+                    Method = g.Key,
+                    TotalAmount = g.Sum(s => s.TotalAmount),
+                    Count = g.Count()
+                })
+                .OrderByDescending(pm => pm.TotalAmount)
+                .ToList();
+
+            // 2. Top productos más vendidos hoy
+            var detailsQuery = _context.SaleDetails
+                .AsNoTracking()
+                .Where(d => d.Sale!.IsActive && d.Sale.CreatedAt >= todayStart && d.Sale.CreatedAt <= todayEnd);
+
+            if (!canViewAllSales)
+            {
+                detailsQuery = detailsQuery.Where(d => d.Sale!.UserId == userId);
+            }
+
+            var rawDetails = await detailsQuery
+                .Select(d => new
+                {
+                    d.ProductName,
+                    d.Brand,
+                    d.Quantity,
+                    d.Subtotal
+                })
+                .ToListAsync();
+
+            var topProducts = rawDetails
+                .GroupBy(d => new { d.ProductName, d.Brand })
+                .Select(g => new DashboardTopProductDto
+                {
+                    ProductName = g.Key.ProductName,
+                    Brand = g.Key.Brand,
+                    TotalQuantity = g.Sum(d => d.Quantity),
+                    TotalAmount = g.Sum(d => d.Subtotal)
+                })
+                .OrderByDescending(tp => tp.TotalQuantity)
+                .Take(5)
+                .ToList();
+
+            // 3. Alertas de Stock
+            var stockAlerts = new List<StockAlertDto>();
+
+            // A) Productos con stock bajo (<= 5)
+            var lowStockList = await _context.Products
+                .AsNoTracking()
+                .Where(p => p.IsActive && p.IsInventoryTracked && p.CurrentStock <= 5)
+                .OrderBy(p => p.CurrentStock)
+                .Take(5)
+                .Select(p => new
+                {
+                    p.Id,
+                    p.InternalCode,
+                    p.Name,
+                    p.CurrentStock,
+                    p.UnitOfMeasure
+                })
+                .ToListAsync();
+
+            stockAlerts.AddRange(lowStockList.Select(p => new StockAlertDto
+            {
+                ProductId = p.Id,
+                InternalCode = p.InternalCode,
+                Name = p.Name,
+                CurrentStock = p.CurrentStock,
+                UnitOfMeasure = p.UnitOfMeasure,
+                AlertType = p.CurrentStock <= 0 ? "OutOfStock" : "LowStock",
+                Message = p.CurrentStock <= 0
+                    ? $"Agotado (0 {p.UnitOfMeasure})"
+                    : $"Inventario bajo: {p.CurrentStock} {p.UnitOfMeasure} restantes"
+            }));
+
+            // B) Próximos a caducar en los próximos 30 días
+            var expireLimit = now.Date.AddDays(30);
+            var expiringRaw = await _context.Products
+                .AsNoTracking()
+                .Where(p => p.IsActive && p.IsInventoryTracked && p.HasExpiration && p.NextExpirationDate != null && p.NextExpirationDate <= expireLimit && p.CurrentStock > 0)
+                .OrderBy(p => p.NextExpirationDate)
+                .Take(5)
+                .Select(p => new
+                {
+                    p.Id,
+                    p.InternalCode,
+                    p.Name,
+                    p.CurrentStock,
+                    p.UnitOfMeasure,
+                    p.NextExpirationDate
+                })
+                .ToListAsync();
+
+            stockAlerts.AddRange(expiringRaw.Select(p =>
+            {
+                int days = (p.NextExpirationDate!.Value.Date - now.Date).Days;
+                return new StockAlertDto
+                {
+                    ProductId = p.Id,
+                    InternalCode = p.InternalCode,
+                    Name = p.Name,
+                    CurrentStock = p.CurrentStock,
+                    UnitOfMeasure = p.UnitOfMeasure,
+                    AlertType = "ExpiringSoon",
+                    DaysRemaining = days,
+                    Message = days <= 0
+                        ? "Vencido hoy o en fecha anterior"
+                        : $"Próximo a caducar en {days} días"
+                };
+            }));
+
+            return new DashboardSummaryDto
+            {
+                TotalSalesAmount = netSales,
+                GrossSalesAmount = grossSales,
+                TotalRefundedAmount = totalRefunded,
+                TotalTicketsCount = totalTicketsCount,
+                IsGlobal = canViewAllSales,
+                ScopeLabel = canViewAllSales ? "Ventas Globales (Toda la tienda)" : "Mis Ventas (Tu turno)",
+                PaymentMethods = paymentMethods,
+                TopSellingProducts = topProducts,
+                StockAlerts = stockAlerts
+            };
+        }
     }
 }

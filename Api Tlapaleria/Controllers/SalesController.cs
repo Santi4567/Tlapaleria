@@ -75,5 +75,18 @@ namespace Api_Tlapaleria.Controllers
 
             return Ok(ApiResponse<Sale>.Exito(ticket, "Ticket recuperado exitosamente."));
         }
+
+        // GET: api/sales/dashboard-summary -> Resumen operativo del día para el Dashboard
+        [HttpGet("dashboard-summary")]
+        public async Task<ActionResult<ApiResponse<DashboardSummaryDto>>> GetDashboardSummary()
+        {
+            int userIdToken = User.GetUserId();
+            var userRole = User.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value ?? string.Empty;
+            bool canViewAllSales = string.Equals(userRole, "Admin", StringComparison.OrdinalIgnoreCase)
+                                   || await _permissionService.UserHasPermissionAsync(userRole, "view.sales");
+
+            var summary = await _saleService.GetDashboardSummaryAsync(userIdToken, canViewAllSales);
+            return Ok(ApiResponse<DashboardSummaryDto>.Exito(summary, "Resumen del día generado exitosamente."));
+        }
     }
 }

@@ -1,4 +1,4 @@
-﻿using Api_Tlapaleria.DTOs;
+using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Models;
 
 namespace Api_Tlapaleria.Services
@@ -15,6 +15,8 @@ namespace Api_Tlapaleria.Services
         Task<PagedResponse<Product>> GetAllProductsAsync(int pageNumber = 1, int pageSize = 50, bool isActive = true);
         //Actualizar los productos 
         Task<Product> UpdateProductAsync(int id, UpdateProductDto datos, int userIdToken);
+        //Actualizar solo precios, proveedor y margen de ganancia
+        Task<Product> UpdatePricingAsync(int id, QuickPriceUpdateDto datos, int userIdToken);
         //Eliminar(Desactivar) Producto
         Task<bool> DeleteProductAsync(int id);
         //Reactivar un producto 

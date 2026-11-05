@@ -25,7 +25,7 @@ internal class Program
 /_/   \_\|_)   (____)  \____/(____) \____/  
         ");
         Console.WriteLine("ejecutando...");
-        Console.WriteLine("versión 4.0.3\n");
+        Console.WriteLine("versión 4.0.7\n");
         Console.WriteLine("s4lm0.exe\n");
         // -------------------------
 
@@ -315,7 +315,7 @@ internal class Program
             Console.ResetColor();
 
             Console.WriteLine("Running...");
-            Console.WriteLine("version 4.0.3\n");
+            Console.WriteLine("version 4.0.7\n");
 
             // --- LEEMOS Y MOSTRAMOS LOS PUERTOS ACTIVOS ---
             Console.ForegroundColor = ConsoleColor.Yellow;

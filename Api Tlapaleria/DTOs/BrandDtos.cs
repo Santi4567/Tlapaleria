@@ -16,6 +16,14 @@ namespace Api_Tlapaleria.DTOs
         public int TargetBrandId { get; set; }
     }
 
+    // Crear marca manualmente
+    public class CreateBrandDto
+    {
+        [Required(ErrorMessage = "El nombre de la marca es obligatorio")]
+        [StringLength(100, ErrorMessage = "El nombre no puede pasar de 100 caracteres")]
+        public string Name { get; set; } = null!;
+    }
+
     // Renombrar: corrige el nombre de una marca y de todos sus productos
     public class RenameBrandDto
     {

@@ -1,4 +1,4 @@
-﻿using Api_Tlapaleria.DTOs;
+using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Models;
 
 namespace Api_Tlapaleria.Services
@@ -13,5 +13,8 @@ namespace Api_Tlapaleria.Services
 
         // Obtener una venta específica con todos sus detalles
         Task<Sale?> GetSaleByIdAsync(int saleId);
+
+        // Resumen operativo diario para el Dashboard / HomeScreen
+        Task<DashboardSummaryDto> GetDashboardSummaryAsync(int userId, bool canViewAllSales);
     }
 }
