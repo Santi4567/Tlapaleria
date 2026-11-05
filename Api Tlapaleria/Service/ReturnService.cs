@@ -70,6 +70,12 @@ namespace Api_Tlapaleria.Services
                 if (ticketOriginal == null || !ticketOriginal.IsActive)
                     throw new KeyNotFoundException("El ticket original no existe o ya se encuentra totalmente cancelado.");
 
+                // Validamos que el ticket no sea de cortesía o con 100% de descuento (Total $0.00)
+                if (ticketOriginal.TotalAmount <= 0 || ticketOriginal.DiscountPercent >= 100m)
+                {
+                    throw new InvalidOperationException("No se pueden procesar devoluciones sobre una venta con el 100% de descuento o con un importe pagado de $0.00.");
+                }
+
                 // Validamos que el ticket aún tenga artículos disponibles para devolver
                 decimal totalPiezasCompradas = await _context.SaleDetails
                     .Where(sd => sd.SaleId == dto.SaleId)
@@ -107,6 +113,9 @@ namespace Api_Tlapaleria.Services
 
                     if (renglonOriginal == null)
                         throw new KeyNotFoundException($"El renglón con ID {item.SaleDetailId} no pertenece al ticket {dto.SaleId}.");
+
+                    if (renglonOriginal.Subtotal <= 0)
+                        throw new InvalidOperationException($"El producto '{renglonOriginal.ProductName}' no tuvo costo monetario tras el descuento y no admite devoluciones ni reembolsos.");
 
                     decimal cantidadYaDevuelta = await _context.ReturnDetails
                         .Where(rd => rd.SaleDetailId == item.SaleDetailId)
