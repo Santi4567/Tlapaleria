@@ -8,7 +8,7 @@ namespace Api_Tlapaleria.DTOs
         public int SaleId { get; set; }
 
         [Required(ErrorMessage = "El RFC es obligatorio.")]
-        [RegularExpression(@"^[A-Z&Ñ]{3,4}\d{6}[A-V1-9][A-Z\d]{2}$", ErrorMessage = "El formato de RFC no es válido.")]
+        [RegularExpression(@"^[A-Z&Ñ]{3,4}\d{6}[A-Z\d]{3}$", ErrorMessage = "El formato de RFC no es válido.")]
         public string Rfc { get; set; } = string.Empty;
 
         [Required(ErrorMessage = "La razón social o nombre completo es obligatorio.")]

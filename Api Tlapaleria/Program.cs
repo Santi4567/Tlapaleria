@@ -25,7 +25,7 @@ internal class Program
 /_/   \_\|_)   (____)  \____/(____) \____/  
         ");
         Console.WriteLine("ejecutando...");
-        Console.WriteLine("versión 4.0.9\n");
+        Console.WriteLine("versión 4.1.4\n");
         Console.WriteLine("s4lm0.exe\n");
         // -------------------------
 
@@ -47,10 +47,17 @@ internal class Program
             })
             .ConfigureApiBehaviorOptions(options =>
             {
-                // Atrapa JSON malformados, saltos de línea inválidos o errores de tipos de datos
+                // Atrapa JSON malformados, saltos de línea inválidos o errores de validación de modelos
                 options.InvalidModelStateResponseFactory = context =>
                 {
-                    var errorResponse = ApiResponse<object>.Error("sintaxis incorrecta");
+                    var errors = context.ModelState.Values
+                        .SelectMany(v => v.Errors)
+                        .Select(e => e.ErrorMessage)
+                        .Where(e => !string.IsNullOrWhiteSpace(e))
+                        .ToList();
+
+                    var errorMsg = errors.Any() ? string.Join(" | ", errors) : "sintaxis incorrecta";
+                    var errorResponse = ApiResponse<object>.Error(errorMsg);
                     return new BadRequestObjectResult(errorResponse);
                 };
             });
@@ -112,8 +119,9 @@ internal class Program
         builder.Services.AddScoped<IBrandService, BrandService>();
         builder.Services.AddScoped<IWorkTaskService, WorkTaskService>();
 
-        // Servicio de Facturación Electrónica (Facturapi)
+        // Servicio de Facturación Electrónica (Facturapi) y Configuración del Negocio
         builder.Services.AddHttpClient();
+        builder.Services.AddScoped<IBusinessConfigService, BusinessConfigService>();
         builder.Services.AddScoped<IFacturacionService, FacturacionService>();
 
         //Apartado de inventario en memoria para multicaja + SignalR
@@ -319,7 +327,7 @@ internal class Program
             Console.ResetColor();
 
             Console.WriteLine("Running...");
-            Console.WriteLine("version 4.0.9\n");
+            Console.WriteLine("version 4.1.4\n");
 
             // --- LEEMOS Y MOSTRAMOS LOS PUERTOS ACTIVOS ---
             Console.ForegroundColor = ConsoleColor.Yellow;

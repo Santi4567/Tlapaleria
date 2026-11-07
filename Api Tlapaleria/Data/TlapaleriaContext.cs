@@ -80,5 +80,6 @@ namespace Api_Tlapaleria.Data
         public DbSet<SaleReturn> Returns { get; set; }//<--- Modelo de la tabla de Returns
         public DbSet<ReturnDetail> ReturnDetails { get; set; }//<--- Modelo de la tabla de ReturnDetails
         public DbSet<Invoice> Invoices { get; set; } // <-- Modelo de la tabla de Facturas (Facturapi)
+        public DbSet<BusinessConfig> BusinessConfigs { get; set; } // <-- Configuración del Negocio y Facturación
     }
 }

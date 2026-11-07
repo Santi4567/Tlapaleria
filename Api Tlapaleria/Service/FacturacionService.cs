@@ -13,38 +13,39 @@ namespace Api_Tlapaleria.Services
         private readonly TlapaleriaContext _context;
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IConfiguration _config;
-        private const string FacturapiBaseUrl = "https://www.facturapi.io/v1/";
+        private readonly IBusinessConfigService _configService;
+        private const string FacturapiBaseUrl = "https://www.facturapi.io/v2/";
 
         public FacturacionService(
             TlapaleriaContext context,
             IHttpClientFactory httpClientFactory,
-            IConfiguration config)
+            IConfiguration config,
+            IBusinessConfigService configService)
         {
             _context = context;
             _httpClientFactory = httpClientFactory;
             _config = config;
+            _configService = configService;
         }
 
-        private string ObtenerApiKey()
+        private async Task<HttpClient> CrearClienteHttpAsync()
         {
-            var apiKey = _config["Facturapi:ApiKey"];
-            if (string.IsNullOrWhiteSpace(apiKey) || apiKey.Contains("TU_LLAVE", StringComparison.OrdinalIgnoreCase))
-            {
-                throw new InvalidOperationException("La API Key de Facturapi no ha sido configurada. Coloca tu llave de pruebas ('sk_test_...') en appsettings.json.");
-            }
-            return apiKey.Trim();
-        }
-
-        private HttpClient CrearClienteHttp()
-        {
+            var apiKey = await _configService.GetFacturapiApiKeyAsync();
             var client = _httpClientFactory.CreateClient("Facturapi");
             client.BaseAddress = new Uri(FacturapiBaseUrl);
-            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", ObtenerApiKey());
+            client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", apiKey);
             return client;
         }
 
         public async Task<FacturaResponseDto> EmitirFacturaVentaAsync(EmitirFacturaDto dto)
         {
+            // Validar que el módulo de facturación esté activo
+            var config = await _configService.GetConfigAsync();
+            if (!config.FacturacionActiva)
+            {
+                throw new InvalidOperationException("El módulo de facturación electrónica no está habilitado en este sistema.");
+            }
+
             // 1. Obtener la venta con sus detalles
             var sale = await _context.Sales
                 .Include(s => s.Details)
@@ -74,58 +75,87 @@ namespace Api_Tlapaleria.Services
                 ? dto.FormaPago
                 : MapearFormaPagoSat(sale.PaymentMethod);
 
+            // Código postal fiscal (si no se especifica, toma el de la ferretería)
+            string codigoPostalFiscal = !string.IsNullOrWhiteSpace(dto.CodigoPostal)
+                ? dto.CodigoPostal.Trim()
+                : config.PostalCode;
+
             // 4. Mapear los productos al formato de Facturapi
-            var itemsFacturapi = sale.Details.Where(d => d.IsActive).Select(d => new
+            var itemsFacturapi = new List<Dictionary<string, object>>();
+
+            foreach (var d in sale.Details.Where(d => d.IsActive))
             {
-                quantity = d.Quantity,
-                discount = d.DiscountAmount > 0 ? (decimal?)d.DiscountAmount : null,
-                product = new
+                var item = new Dictionary<string, object>
                 {
-                    description = string.IsNullOrWhiteSpace(d.ProductName) ? "Artículo de tlapalería" : d.ProductName,
-                    product_key = "01010101", // Clave genérica SAT si no hay específica
-                    price = d.UnitPrice,
-                    tax_included = true,      // Desglosa el 16% de IVA automáticamente del precio final
-                    taxes = new object[]
+                    ["quantity"] = d.Quantity,
+                    ["product"] = new Dictionary<string, object>
                     {
-                        new
+                        ["description"] = string.IsNullOrWhiteSpace(d.ProductName) ? "Artículo de tlapalería" : d.ProductName,
+                        ["product_key"] = "01010101", // Clave genérica SAT si no hay específica
+                        ["price"] = d.UnitPrice,
+                        ["tax_included"] = true,      // Desglosa el 16% de IVA automáticamente del precio final
+                        ["taxes"] = new object[]
                         {
-                            type = "IVA",
-                            rate = 0.16m
-                        }
-                    },
-                    unit_key = "H87"          // Clave SAT para "Pieza"
+                            new
+                            {
+                                type = "IVA",
+                                rate = 0.16m
+                            }
+                        },
+                        ["unit_key"] = "H87"          // Clave SAT para "Pieza"
+                    }
+                };
+
+                // Facturapi solo acepta 'discount' si tiene un monto positivo (no acepta null ni 0)
+                if (d.DiscountAmount > 0)
+                {
+                    item["discount"] = d.DiscountAmount;
                 }
-            }).ToList();
+
+                itemsFacturapi.Add(item);
+            }
 
             if (!itemsFacturapi.Any())
             {
                 throw new InvalidOperationException("La venta no tiene productos activos válidos para facturar.");
             }
 
-            // 5. Estructurar el JSON para Facturapi (CFDI 4.0)
-            var invoicePayload = new
+            // 5. Estructurar el cliente (Receptor)
+            var customerDict = new Dictionary<string, object>
             {
-                customer = new
+                ["legal_name"] = dto.RazonSocial.Trim().ToUpper(),
+                ["tax_id"] = dto.Rfc.Trim().ToUpper(),
+                ["tax_system"] = dto.RegimenFiscal.Trim(),
+                ["address"] = new Dictionary<string, object>
                 {
-                    legal_name = dto.RazonSocial.Trim().ToUpper(),
-                    tax_id = dto.Rfc.Trim().ToUpper(),
-                    tax_system = dto.RegimenFiscal.Trim(),
-                    email = string.IsNullOrWhiteSpace(dto.Email) ? null : dto.Email.Trim(),
-                    address = new
-                    {
-                        zip = dto.CodigoPostal.Trim()
-                    }
-                },
-                items = itemsFacturapi,
-                payment_form = formaPago,
-                payment_method = "PUE", // Pago en una sola exhibición para ventas directas
-                use = dto.UsoCfdi.Trim().ToUpper()
+                    ["zip"] = codigoPostalFiscal
+                }
+            };
+
+            if (!string.IsNullOrWhiteSpace(dto.Email))
+            {
+                customerDict["email"] = dto.Email.Trim();
+            }
+
+            // Estructurar el payload final para Facturapi v2 (CFDI 4.0)
+            var invoicePayload = new Dictionary<string, object>
+            {
+                ["customer"] = customerDict,
+                ["items"] = itemsFacturapi,
+                ["payment_form"] = formaPago,
+                ["payment_method"] = "PUE", // Pago en una sola exhibición para ventas directas
+                ["use"] = dto.UsoCfdi.Trim().ToUpper()
             };
 
             // 6. Enviar petición a Facturapi
-            var client = CrearClienteHttp();
+            var client = await CrearClienteHttpAsync();
+            var jsonOptions = new JsonSerializerOptions
+            {
+                DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull
+            };
+
             var jsonContent = new StringContent(
-                JsonSerializer.Serialize(invoicePayload),
+                JsonSerializer.Serialize(invoicePayload, jsonOptions),
                 Encoding.UTF8,
                 "application/json"
             );
@@ -217,7 +247,7 @@ namespace Api_Tlapaleria.Services
 
         public async Task<byte[]> DescargarPdfAsync(string facturapiId)
         {
-            var client = CrearClienteHttp();
+            var client = await CrearClienteHttpAsync();
             var response = await client.GetAsync($"invoices/{facturapiId}/pdf");
 
             if (!response.IsSuccessStatusCode)
@@ -230,7 +260,7 @@ namespace Api_Tlapaleria.Services
 
         public async Task<byte[]> DescargarXmlAsync(string facturapiId)
         {
-            var client = CrearClienteHttp();
+            var client = await CrearClienteHttpAsync();
             var response = await client.GetAsync($"invoices/{facturapiId}/xml");
 
             if (!response.IsSuccessStatusCode)
@@ -243,7 +273,7 @@ namespace Api_Tlapaleria.Services
 
         public async Task<bool> EnviarPorEmailAsync(string facturapiId, string email)
         {
-            var client = CrearClienteHttp();
+            var client = await CrearClienteHttpAsync();
             var payload = new { email = email.Trim() };
             var content = new StringContent(JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json");
 
@@ -264,7 +294,7 @@ namespace Api_Tlapaleria.Services
                 throw new InvalidOperationException("Esta factura ya se encuentra cancelada.");
             }
 
-            var client = CrearClienteHttp();
+            var client = await CrearClienteHttpAsync();
             // Facturapi cancela mediante DELETE /invoices/{id}?motive=02
             var response = await client.DeleteAsync($"invoices/{factura.FacturapiId}?motive={motivo}");
 
