@@ -1,7 +1,9 @@
 ﻿using Api_Tlapaleria.Data;
 using Api_Tlapaleria.DTOs;
+using Api_Tlapaleria.Hubs;
 using Api_Tlapaleria.Models;
 using Api_Tlapaleria.Services;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
 namespace Api_Tlapaleria.Services // Nota: Asegúrate de que coincida con tu carpeta (Service o Services)
@@ -9,10 +11,28 @@ namespace Api_Tlapaleria.Services // Nota: Asegúrate de que coincida con tu car
     public class RoleService : IRoleService
     {
         private readonly TlapaleriaContext _context;
+        private readonly IHubContext<InventoryHub> _hubContext;
 
-        public RoleService(TlapaleriaContext context)
+        public RoleService(TlapaleriaContext context, IHubContext<InventoryHub> hubContext)
         {
             _context = context;
+            _hubContext = hubContext;
+        }
+
+        private async Task NotifyPermissionsUpdatedAsync(int roleId, string roleName)
+        {
+            try
+            {
+                await _hubContext.Clients.All.SendAsync("PermissionsUpdated", new
+                {
+                    roleId,
+                    roleName
+                });
+            }
+            catch
+            {
+                // La notificación en tiempo real no interrumpe el flujo principal si el hub está ocupado
+            }
         }
 
         // 1. OBTENER TODOS LOS ROLES (Con sus permisos mapeados)
@@ -110,6 +130,8 @@ namespace Api_Tlapaleria.Services // Nota: Asegúrate de que coincida con tu car
 
             _context.Roles.Update(rol);
             await _context.SaveChangesAsync();
+
+            await NotifyPermissionsUpdatedAsync(rol.Id, rol.Nombre);
 
             return await GetRoleByIdAsync(rol.Id);
         }
@@ -232,6 +254,8 @@ namespace Api_Tlapaleria.Services // Nota: Asegúrate de que coincida con tu car
             rol.Permisos.Add(permiso);
             await _context.SaveChangesAsync(); // SQL ejecuta: INSERT INTO RolPermiso (RolId, PermisoId) VALUES (...)
 
+            await NotifyPermissionsUpdatedAsync(rol.Id, rol.Nombre);
+
             return await GetRoleByIdAsync(rolId);
         }
 
@@ -266,6 +290,8 @@ namespace Api_Tlapaleria.Services // Nota: Asegúrate de que coincida con tu car
             // 3. MAGIA DE EF CORE: Removemos de la lista y guardamos
             rol.Permisos.Remove(permisoARemover);
             await _context.SaveChangesAsync(); // SQL ejecuta: DELETE FROM RolPermiso WHERE RolId = x AND PermisoId = y
+
+            await NotifyPermissionsUpdatedAsync(rol.Id, rol.Nombre);
 
             return await GetRoleByIdAsync(rolId);
         }
@@ -306,6 +332,7 @@ namespace Api_Tlapaleria.Services // Nota: Asegúrate de que coincida con tu car
             }
 
             await _context.SaveChangesAsync();
+            await NotifyPermissionsUpdatedAsync(rol.Id, rol.Nombre);
             return await GetRoleByIdAsync(rolId);
         }
 
@@ -344,6 +371,7 @@ namespace Api_Tlapaleria.Services // Nota: Asegúrate de que coincida con tu car
             }
 
             await _context.SaveChangesAsync();
+            await NotifyPermissionsUpdatedAsync(rol.Id, rol.Nombre);
             return await GetRoleByIdAsync(rolId);
         }
     }

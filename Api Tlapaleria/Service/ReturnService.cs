@@ -25,6 +25,7 @@ namespace Api_Tlapaleria.Services
                 .AsNoTracking() // <-- OPTIMIZACIÓN DE MEMORIA
                 .Include(r => r.User)
                 .Include(r => r.Sale)
+                    .ThenInclude(s => s!.Customer)
                 .Include(r => r.Details)
                     .ThenInclude(d => d.SaleDetail)
                 .AsQueryable();
@@ -34,6 +35,7 @@ namespace Api_Tlapaleria.Services
                 query = query.Where(r =>
                     r.ReturnFolio.Contains(search) ||
                     (r.Sale != null && r.Sale.Folio.Contains(search)) ||
+                    (r.Sale != null && r.Sale.Customer != null && r.Sale.Customer.Name.Contains(search)) ||
                     (r.Reason != null && r.Reason.Contains(search))
                 );
             }
@@ -56,7 +58,7 @@ namespace Api_Tlapaleria.Services
             };
         }
 
-        // Crear una devolucion 
+        // Crear una devolucion (Contado o Crédito)
         public async Task<SaleReturn> CreateReturnAsync(CreateReturnDto dto, int userId)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
@@ -100,6 +102,8 @@ namespace Api_Tlapaleria.Services
                     UserId = userId,
                     Reason = dto.Reason,
                     TotalRefunded = 0,
+                    AppliedToDebtAmount = 0,
+                    CashRefundedAmount = 0,
                     CreatedAt = DateTime.Now
                 };
 
@@ -133,7 +137,7 @@ namespace Api_Tlapaleria.Services
                         throw new InvalidOperationException($"El producto '{renglonOriginal.ProductName}' no permite devolver cantidades con decimales ({item.QuantityReturned}).");
                     }
 
-                    // El reembolso se calcula sobre lo REALMENTE pagado (Subtotal es neto, ya con descuento prorrateado).
+                    // El reembolso se calcula sobre lo REALMENTE facturado/cobrado (Subtotal es neto, ya con descuento prorrateado).
                     // Si se devuelve lo último que queda del renglón, se reembolsa el remanente exacto para no perder centavos.
                     decimal dineroYaReembolsado = await _context.ReturnDetails
                         .Where(rd => rd.SaleDetailId == item.SaleDetailId)
@@ -179,8 +183,46 @@ namespace Api_Tlapaleria.Services
                     }
                 }
 
-                // La venta original permanece activa (IsActive = true) para registrar limpiamente
-                // el ingreso en la venta y el egreso en la devolución, manteniendo la contabilidad transparente.
+                // ====================================================================================
+                // 3. REGLA DE REEMBOLSO EN VENTAS A CRÉDITO VS CONTADO
+                // Si el ticket es a crédito, el monto devuelto descuenta primero de la deuda pendiente
+                // (AppliedToDebtAmount). Solo si el cliente ya había abonado más de lo que queda por pagar,
+                // la diferencia se marca como efectivo a devolver (CashRefundedAmount).
+                // ====================================================================================
+                var cuentaCredito = await _context.CreditAccounts
+                    .FirstOrDefaultAsync(ca => ca.SaleId == ticketOriginal.Id);
+
+                if (cuentaCredito != null)
+                {
+                    decimal montoAplicadoADeuda = Math.Min(devolucion.TotalRefunded, cuentaCredito.Balance);
+                    decimal excedenteEfectivo = Math.Max(0m, devolucion.TotalRefunded - montoAplicadoADeuda);
+
+                    devolucion.AppliedToDebtAmount = montoAplicadoADeuda;
+                    devolucion.CashRefundedAmount = excedenteEfectivo;
+
+                    cuentaCredito.ReturnedAmount += devolucion.TotalRefunded;
+                    cuentaCredito.Balance = Math.Max(0m, cuentaCredito.OriginalAmount - cuentaCredito.ReturnedAmount - cuentaCredito.PaidAmount);
+                    cuentaCredito.UpdatedAt = DateTime.Now;
+
+                    if (cuentaCredito.Balance == 0m)
+                    {
+                        if (cuentaCredito.ReturnedAmount >= cuentaCredito.OriginalAmount && cuentaCredito.PaidAmount == 0m)
+                        {
+                            cuentaCredito.Status = CreditAccountStatus.Cancelado.ToString();
+                        }
+                        else
+                        {
+                            cuentaCredito.Status = CreditAccountStatus.Liquidado.ToString();
+                            cuentaCredito.PaidAt ??= DateTime.Now;
+                        }
+                    }
+                }
+                else
+                {
+                    // Venta de contado normal: el 100% sale de caja
+                    devolucion.AppliedToDebtAmount = 0m;
+                    devolucion.CashRefundedAmount = devolucion.TotalRefunded;
+                }
 
                 _context.Returns.Add(devolucion);
                 await _context.SaveChangesAsync();

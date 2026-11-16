@@ -22,6 +22,8 @@ namespace Api_Tlapaleria.DTOs
         // --- Ganancia real (ventas netas - costo proveedor) ---
         public decimal CostOfGoodsSold { get; set; }
         public decimal RealProfitAmount { get; set; }
+        public decimal CreditPaymentsCollectedAmount { get; set; } // Abonos cobrados en el periodo
+        public decimal PendingCreditSalesAmount { get; set; }      // Saldo aún pendiente de cobro de ventas del periodo
 
         public List<ChartDataPointDto> ChartData { get; set; } = new List<ChartDataPointDto>();
         public List<FinancialSaleItemDto> Sales { get; set; } = new List<FinancialSaleItemDto>();
@@ -35,12 +37,15 @@ namespace Api_Tlapaleria.DTOs
         public string Folio { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; }
         public string CashierName { get; set; } = string.Empty;
+        public string? CustomerName { get; set; }
         public string PaymentMethod { get; set; } = string.Empty;
         public string? PaymentReference { get; set; }
         public int ItemsCount { get; set; }
         public decimal GrossAmount { get; set; }
         public decimal RefundedAmount { get; set; }
         public decimal NetAmount { get; set; }
+        public decimal PaidAmount { get; set; }
+        public decimal PendingBalance { get; set; }
         public decimal RealProfitAmount { get; set; }
         public bool IsActive { get; set; }
     }
@@ -63,6 +68,8 @@ namespace Api_Tlapaleria.DTOs
         public string UserName { get; set; } = string.Empty;
         public string? Reason { get; set; }
         public decimal TotalRefunded { get; set; }
+        public decimal AppliedToDebtAmount { get; set; }
+        public decimal CashRefundedAmount { get; set; }
         public bool IsFullCancellation { get; set; }
         public List<FinancialReturnItemDetailDto> Items { get; set; } = new();
     }

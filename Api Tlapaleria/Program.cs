@@ -25,7 +25,7 @@ internal class Program
 /_/   \_\|_)   (____)  \____/(____) \____/  
         ");
         Console.WriteLine("ejecutando...");
-        Console.WriteLine("versión 4.1.4\n");
+        Console.WriteLine("versión 4.1.6\n");
         Console.WriteLine("s4lm0.exe\n");
         // -------------------------
 
@@ -63,15 +63,19 @@ internal class Program
             });
 
         // CORS
-        // CORS
         builder.Services.AddCors(options =>
         {
             options.AddPolicy("PoliticaFrontend", policy =>
             {
-                policy.WithOrigins(
-                        "http://localhost:5173", // Electron en desarrollo
-                        "null"                   // Electron empaquetado (file://)
-                      )
+                policy.SetIsOriginAllowed(origin =>
+                      {
+                          if (string.IsNullOrEmpty(origin) || origin == "null") return true;
+                          if (Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+                          {
+                              return uri.Host == "localhost" || uri.Host == "127.0.0.1" || uri.Host.EndsWith(".local");
+                          }
+                          return false;
+                      })
                       .AllowAnyHeader()
                       .AllowAnyMethod()
                       .AllowCredentials();
@@ -123,6 +127,10 @@ internal class Program
         builder.Services.AddHttpClient();
         builder.Services.AddScoped<IBusinessConfigService, BusinessConfigService>();
         builder.Services.AddScoped<IFacturacionService, FacturacionService>();
+
+        // Servicio de Clientes y Cuentas por Cobrar (Ventas a Crédito / Fiado)
+        builder.Services.AddScoped<ICreditAccountService, CreditAccountService>();
+        builder.Services.AddScoped<ICustomerService, CustomerService>();
 
         //Apartado de inventario en memoria para multicaja + SignalR
         builder.Services.AddSingleton<IStockReservationService, StockReservationService>();
@@ -294,10 +302,10 @@ internal class Program
             app.UseSwaggerUI();
         }
 
-        app.UseHttpsRedirection();
-
         // --- POLITICAS DE CORS ---
         app.UseCors("PoliticaFrontend");
+
+        app.UseHttpsRedirection();
 
         // --- ACTIVAMOS EL ESCUDO LIMITADOR DE PETICIONES ---
         app.UseRateLimiter();
@@ -327,7 +335,7 @@ internal class Program
             Console.ResetColor();
 
             Console.WriteLine("Running...");
-            Console.WriteLine("version 4.1.4\n");
+            Console.WriteLine("version 4.1.6\n");
 
             // --- LEEMOS Y MOSTRAMOS LOS PUERTOS ACTIVOS ---
             Console.ForegroundColor = ConsoleColor.Yellow;

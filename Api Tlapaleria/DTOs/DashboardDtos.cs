@@ -33,6 +33,9 @@ namespace Api_Tlapaleria.DTOs
         public decimal GrossSalesAmount { get; set; }
         public decimal TotalRefundedAmount { get; set; }
         public int TotalTicketsCount { get; set; }
+        public decimal CreditSalesAmountToday { get; set; } // Total de mercancía entregada a crédito hoy
+        public decimal CreditPaymentsCollectedToday { get; set; } // Total de anticipos/abonos cobrados hoy
+        public decimal TotalPendingReceivables { get; set; } // Deuda total activa en cartera
         public bool IsGlobal { get; set; } // true if admin / view.sales; false if cashier personal
         public string ScopeLabel { get; set; } = string.Empty;
         public List<PaymentMethodSummaryDto> PaymentMethods { get; set; } = new();

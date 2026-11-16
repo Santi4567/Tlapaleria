@@ -1,6 +1,8 @@
 ﻿using Api_Tlapaleria.Data;
 using Api_Tlapaleria.DTOs;
+using Api_Tlapaleria.Hubs;
 using Api_Tlapaleria.Models;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
 namespace Api_Tlapaleria.Services
@@ -8,10 +10,12 @@ namespace Api_Tlapaleria.Services
     public class UserService : IUserService
     {
         private readonly TlapaleriaContext _context;
+        private readonly IHubContext<InventoryHub> _hubContext;
 
-        public UserService(TlapaleriaContext context)
+        public UserService(TlapaleriaContext context, IHubContext<InventoryHub> hubContext)
         {
             _context = context;
+            _hubContext = hubContext;
         }
 
         //Registrar Usuarios 
@@ -153,6 +157,9 @@ namespace Api_Tlapaleria.Services
             if (nombreOcupado) throw new Exception($"El usuario '{datos.Username}' ya está en uso.");
 
 
+            bool rolCambio = user.RolId != rolNuevo.Id;
+            bool estadoCambio = user.IsActive != datos.IsActive;
+
             // 5. APLICAR CAMBIOS
             user.Name = datos.Name;
             user.Username = datos.Username;
@@ -165,6 +172,23 @@ namespace Api_Tlapaleria.Services
 
             // Recargamos la relación para devolver el objeto completo
             await _context.Entry(user).Reference(u => u.Rol).LoadAsync();
+
+            try
+            {
+                if (rolCambio || estadoCambio)
+                {
+                    await _hubContext.Clients.All.SendAsync("UserUpdated", new
+                    {
+                        userId = user.Id,
+                        roleName = user.Rol.Nombre,
+                        isActive = user.IsActive
+                    });
+                }
+            }
+            catch
+            {
+                // Notificación silenciosa
+            }
 
             return user;
         }
@@ -417,8 +441,20 @@ namespace Api_Tlapaleria.Services
             // --- EJECUCIÓN ---
             try
             {
+                int deletedUserId = targetUser.Id;
                 _context.Users.Remove(targetUser);
                 await _context.SaveChangesAsync();
+
+                try
+                {
+                    await _hubContext.Clients.All.SendAsync("UserUpdated", new
+                    {
+                        userId = deletedUserId,
+                        isActive = false
+                    });
+                }
+                catch { }
+
                 return true;
             }
             catch (DbUpdateException)

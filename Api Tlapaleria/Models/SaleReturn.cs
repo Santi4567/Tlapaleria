@@ -32,6 +32,15 @@ namespace Api_Tlapaleria.Models
         [Column(TypeName = "decimal(10,2)")]
         public decimal TotalRefunded { get; set; }
 
+        // --- DESGLOSE PARA VENTAS A CRÉDITO ---
+        // Monto que se descontó directamente de la deuda pendiente del cliente (no salió efectivo de caja)
+        [Column(TypeName = "decimal(10,2)")]
+        public decimal AppliedToDebtAmount { get; set; } = 0;
+
+        // Monto que efectivamente se reembolsó en dinero al cliente (100% en ventas de contado, o excedente si ya había abonado de más en crédito)
+        [Column(TypeName = "decimal(10,2)")]
+        public decimal CashRefundedAmount { get; set; } = 0;
+
         [MaxLength(255)]
         public string? Reason { get; set; }
 

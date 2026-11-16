@@ -20,13 +20,28 @@ namespace Api_Tlapaleria.Services
             _stockReservationService = stockReservationService;
         }
 
-        //POST: Crear una nueva venta 
+        // POST: Crear una nueva venta (Contado o Crédito)
         public async Task<Sale> CreateSaleAsync(CreateSaleDto saleDto, int userId)
         {
             using var transaction = await _context.Database.BeginTransactionAsync();
 
             try
             {
+                Customer? cliente = null;
+                if (saleDto.CustomerId.HasValue && saleDto.CustomerId.Value > 0)
+                {
+                    cliente = await _context.Customers
+                        .FirstOrDefaultAsync(c => c.Id == saleDto.CustomerId.Value);
+
+                    if (cliente == null || !cliente.IsActive)
+                        throw new Exception("El cliente seleccionado no existe o se encuentra inactivo.");
+                }
+
+                if (saleDto.PaymentMethod == "Credito" && cliente == null)
+                {
+                    throw new Exception("Para realizar una venta a crédito (fiado), es obligatorio seleccionar un cliente de confianza.");
+                }
+
                 // Creación de Folio único para cada transacción 
                 var random = new Random();
                 string folio = $"TKT-{DateTime.Now:yyMMddHHmmssfff}-{random.Next(1000, 10000)}";
@@ -37,6 +52,7 @@ namespace Api_Tlapaleria.Services
                     PaymentMethod = saleDto.PaymentMethod,
                     PaymentReference = saleDto.PaymentReference?.Trim(),
                     UserId = userId,
+                    CustomerId = cliente?.Id,
                     TotalAmount = 0,
                     IsActive = true,
                     CreatedAt = DateTime.Now
@@ -67,6 +83,7 @@ namespace Api_Tlapaleria.Services
                     {
                         throw new Exception($"El producto '{presentacion.Product.Name}' se vende por piezas enteras ({presentacion.Product.UnitOfMeasure}) y no permite vender cantidades con decimales (intentaste vender: {item.Quantity}).");
                     }
+
                     // 2. MATEMÁTICAS DE INVENTARIO
                     decimal cantidadBaseARestar = item.Quantity * presentacion.StockFactor;
 
@@ -84,7 +101,6 @@ namespace Api_Tlapaleria.Services
                     }
 
                     // 3. ARMAMOS LA LIBRETA (Ticket)
-
                     var detalle = new SaleDetail
                     {
                         ProductId = presentacion.Product.Id,
@@ -117,7 +133,9 @@ namespace Api_Tlapaleria.Services
                             Quantity = cantidadBaseARestar,
                             PreviousStock = stockAnterior,
                             NewStock = presentacion.Product.CurrentStock,
-                            Notes = $"Ticket: {folio}. Se vendieron {item.Quantity} de la presentación '{presentacion.Name}'.",
+                            Notes = saleDto.PaymentMethod == "Credito"
+                                ? $"Ticket a Crédito: {folio} (Cliente: {cliente!.Name}). Se entregaron {item.Quantity} de '{presentacion.Name}'."
+                                : $"Ticket: {folio}. Se vendieron {item.Quantity} de la presentación '{presentacion.Name}'.",
                             CreatedAt = DateTime.Now
                         };
 
@@ -168,7 +186,53 @@ namespace Api_Tlapaleria.Services
                     venta.TotalAmount = subtotalBruto - descuentoMonto;
                 }
 
-                if (venta.PaymentMethod == "Tarjeta" || venta.PaymentMethod == "Transferencia")
+                // ====================================================================================
+                // VALIDACIÓN DE MÉTODO DE PAGO (CONTADO VS CRÉDITO)
+                // ====================================================================================
+                decimal anticipoCredito = 0m;
+                string metodoAnticipo = "Efectivo";
+
+                if (venta.PaymentMethod == "Credito")
+                {
+                    if (venta.TotalAmount <= 0)
+                        throw new Exception("No se puede abrir una cuenta de crédito por un monto de $0.00.");
+
+                    anticipoCredito = Math.Round(saleDto.InitialPayment ?? 0m, 2, MidpointRounding.AwayFromZero);
+
+                    if (anticipoCredito < 0)
+                        throw new Exception("El anticipo inicial no puede ser negativo.");
+
+                    if (anticipoCredito >= venta.TotalAmount)
+                        throw new Exception($"El anticipo (${anticipoCredito:N2}) cubre el total de la venta (${venta.TotalAmount:N2}). Regístrala como una venta de contado.");
+
+                    decimal deudaNetaGenerada = venta.TotalAmount - anticipoCredito;
+
+                    // Validación opcional de límite de crédito del cliente
+                    if (cliente!.CreditLimit.HasValue && cliente.CreditLimit.Value > 0)
+                    {
+                        decimal deudaActualCliente = await _context.CreditAccounts
+                            .Where(ca => ca.CustomerId == cliente.Id && ca.Balance > 0 && ca.Status != CreditAccountStatus.Cancelado.ToString())
+                            .SumAsync(ca => (decimal?)ca.Balance) ?? 0m;
+
+                        if (deudaActualCliente + deudaNetaGenerada > cliente.CreditLimit.Value)
+                        {
+                            decimal disponible = Math.Max(0m, cliente.CreditLimit.Value - deudaActualCliente);
+                            throw new Exception(
+                                $"El cliente '{cliente.Name}' supera su límite de crédito autorizado (${cliente.CreditLimit.Value:N2}). " +
+                                $"Deuda actual: ${deudaActualCliente:N2} | Disponible: ${disponible:N2} | Nuevo saldo a financiar: ${deudaNetaGenerada:N2}.");
+                        }
+                    }
+
+                    if (anticipoCredito > 0)
+                    {
+                        metodoAnticipo = string.IsNullOrWhiteSpace(saleDto.InitialPaymentMethod) ? "Efectivo" : saleDto.InitialPaymentMethod;
+                        if ((metodoAnticipo == "Tarjeta" || metodoAnticipo == "Transferencia") && string.IsNullOrWhiteSpace(venta.PaymentReference))
+                        {
+                            throw new Exception($"Para el anticipo con {metodoAnticipo}, es obligatorio ingresar el número de autorización o referencia.");
+                        }
+                    }
+                }
+                else if (venta.PaymentMethod == "Tarjeta" || venta.PaymentMethod == "Transferencia")
                 {
                     if (string.IsNullOrWhiteSpace(venta.PaymentReference))
                     {
@@ -194,14 +258,59 @@ namespace Api_Tlapaleria.Services
                     }
                     else
                     {
-                        // Opcional: Si quieres que para efectivo sea obligatorio poner con cuánto pagaron, descomenta esto:
                         throw new Exception("Debes indicar el monto en efectivo con el que pagó el cliente.");
                     }
                 }
 
-                // AQUÍ ESTABA EL ERROR: Estas líneas se habían perdido al pegar
                 _context.Sales.Add(venta);
                 await _context.SaveChangesAsync();
+
+                // Si es una venta a crédito, creamos su Cuenta por Cobrar (CreditAccount) y su anticipo si dejó
+                if (venta.PaymentMethod == "Credito" && cliente != null)
+                {
+                    string folioCuenta = $"CRD-{DateTime.Now:yyMMddHHmmssfff}-{random.Next(1000, 10000)}";
+                    decimal saldoPendiente = venta.TotalAmount - anticipoCredito;
+
+                    var cuentaCredito = new CreditAccount
+                    {
+                        Folio = folioCuenta,
+                        CustomerId = cliente.Id,
+                        SaleId = venta.Id,
+                        UserId = userId,
+                        OriginalAmount = venta.TotalAmount,
+                        ReturnedAmount = 0m,
+                        PaidAmount = anticipoCredito,
+                        Balance = saldoPendiente,
+                        Status = anticipoCredito > 0
+                            ? CreditAccountStatus.Abonado.ToString()
+                            : CreditAccountStatus.Pendiente.ToString(),
+                        DueDate = saleDto.DueDate,
+                        Notes = saleDto.CreditNotes?.Trim(),
+                        CreatedAt = DateTime.Now,
+                        UpdatedAt = DateTime.Now
+                    };
+
+                    if (anticipoCredito > 0)
+                    {
+                        string folioAbono = $"ABN-{DateTime.Now:yyMMddHHmmssfff}-{random.Next(1000, 10000)}";
+                        var pagoInicial = new CreditPayment
+                        {
+                            PaymentFolio = folioAbono,
+                            CustomerId = cliente.Id,
+                            UserId = userId,
+                            Amount = anticipoCredito,
+                            PaymentMethod = metodoAnticipo,
+                            PaymentReference = venta.PaymentReference,
+                            Notes = $"Anticipo inicial al adquirir la venta {venta.Folio}",
+                            CreatedAt = DateTime.Now
+                        };
+                        cuentaCredito.Payments.Add(pagoInicial);
+                    }
+
+                    _context.CreditAccounts.Add(cuentaCredito);
+                    await _context.SaveChangesAsync();
+                }
+
                 await transaction.CommitAsync();
 
                 if (itemsParaNotificar.Count > 0)
@@ -210,7 +319,12 @@ namespace Api_Tlapaleria.Services
                 }
 
                 await _context.Entry(venta).Reference(v => v.User).LoadAsync();
-                return venta; // <-- El return que el compilador no encontraba
+                if (venta.CustomerId.HasValue)
+                {
+                    await _context.Entry(venta).Reference(v => v.Customer).LoadAsync();
+                }
+
+                return venta;
             }
             catch (Exception)
             {
@@ -218,29 +332,27 @@ namespace Api_Tlapaleria.Services
                 throw;
             }
         }
-        // Busqueda de Venta en tabla Sale
-        // consulta flexible.
-        // usamos .Contains() para que si el folio es TKT-2604111609-8492,
-        // el cajero pueda encontrarlo con solo teclear 8492 o 260411.
+
+        // Búsqueda de Venta en tabla Sale
         public async Task<PagedResponse<Sale>> GetSalesAsync(string? searchFolio = null, int pageNumber = 1, int pageSize = 50)
         {
-            // Empezamos armando la consulta, incluyendo al usuario para saber quién cobró
             var query = _context.Sales
                 .Include(s => s.User)
+                .Include(s => s.Customer)
                 .Include(s => s.Details)
                 .AsQueryable();
 
-            // Si el frontend nos mandó algo en la caja de búsqueda, filtramos
             if (!string.IsNullOrWhiteSpace(searchFolio))
             {
-                query = query.Where(s => s.Folio.Contains(searchFolio));
+                string term = searchFolio.Trim();
+                query = query.Where(s =>
+                    s.Folio.Contains(term) ||
+                    (s.Customer != null && s.Customer.Name.Contains(term)));
             }
 
-            // Contamos el total de tickets para las matemáticas de la paginación
             var totalItems = await query.CountAsync();
             var totalPages = (int)Math.Ceiling(totalItems / (double)pageSize);
 
-            // Traemos la página solicitada, ordenando siempre del más nuevo al más viejo
             var sales = await query
                 .OrderByDescending(s => s.CreatedAt)
                 .Skip((pageNumber - 1) * pageSize)
@@ -255,12 +367,14 @@ namespace Api_Tlapaleria.Services
                 CurrentPage = pageNumber
             };
         }
-        //GET: Buscar una venta por ID 
+
+        // GET: Buscar una venta por ID 
         public async Task<Sale?> GetSaleByIdAsync(int saleId)
         {
             var ticket = await _context.Sales
-                .Include(s => s.User) // Traemos los datos del cajero 
-                .Include(s => s.Details) // Traemos todos los productos de esta venta
+                .Include(s => s.User)
+                .Include(s => s.Customer)
+                .Include(s => s.Details)
                 .FirstOrDefaultAsync(s => s.Id == saleId);
 
             return ticket;
@@ -273,7 +387,7 @@ namespace Api_Tlapaleria.Services
             var todayStart = now.Date;
             var todayEnd = now.Date.AddDays(1).AddTicks(-1);
 
-            // 1. Consulta base de ventas de hoy
+            // 1. Consulta base de ventas y devoluciones de hoy
             var salesQuery = _context.Sales
                 .AsNoTracking()
                 .Where(s => s.IsActive && s.CreatedAt >= todayStart && s.CreatedAt <= todayEnd);
@@ -282,13 +396,17 @@ namespace Api_Tlapaleria.Services
                 .AsNoTracking()
                 .Where(r => r.CreatedAt >= todayStart && r.CreatedAt <= todayEnd);
 
+            var creditPaymentsTodayQuery = _context.CreditPayments
+                .AsNoTracking()
+                .Where(cp => cp.CreatedAt >= todayStart && cp.CreatedAt <= todayEnd);
+
             if (!canViewAllSales)
             {
                 salesQuery = salesQuery.Where(s => s.UserId == userId);
                 returnsQuery = returnsQuery.Where(r => r.UserId == userId);
+                creditPaymentsTodayQuery = creditPaymentsTodayQuery.Where(cp => cp.UserId == userId);
             }
 
-            // Traemos las ventas de hoy con solo las columnas necesarias para calcular montos y agrupar en memoria
             var salesList = await salesQuery
                 .Select(s => new
                 {
@@ -298,27 +416,72 @@ namespace Api_Tlapaleria.Services
                 })
                 .ToListAsync();
 
-            var grossSales = salesList.Sum(s => s.TotalAmount);
+            var creditPaymentsToday = await creditPaymentsTodayQuery
+                .Select(cp => new
+                {
+                    cp.Amount,
+                    PaymentMethod = cp.PaymentMethod ?? "Efectivo"
+                })
+                .ToListAsync();
+
+            // Separamos ventas de contado vs ventas a crédito
+            // Regla de negocio: En Caja/Ingresos entra el dinero de ventas de contado + los anticipos/abonos cobrados hoy
+            var cashSalesList = salesList.Where(s => s.PaymentMethod != "Credito").ToList();
+            var creditSalesList = salesList.Where(s => s.PaymentMethod == "Credito").ToList();
+
+            var creditSalesTodayAmount = creditSalesList.Sum(s => s.TotalAmount);
+            var creditPaymentsCollectedToday = creditPaymentsToday.Sum(cp => cp.Amount);
+
+            var grossSales = cashSalesList.Sum(s => s.TotalAmount) + creditPaymentsCollectedToday;
             var totalTicketsCount = salesList.Count;
 
-            // Reembolsos de hoy
-            var totalRefunded = await returnsQuery
-                .Select(r => (decimal?)r.TotalRefunded)
-                .SumAsync() ?? 0m;
+            // Reembolsos en efectivo de hoy (para ventas a crédito solo resta si se devolvió efectivo excedente, no lo que solo descontó deuda)
+            var returnsTodayList = await returnsQuery
+                .Select(r => new
+                {
+                    r.TotalRefunded,
+                    r.AppliedToDebtAmount,
+                    r.CashRefundedAmount,
+                    SalePaymentMethod = r.Sale != null ? r.Sale.PaymentMethod : "Efectivo"
+                })
+                .ToListAsync();
+
+            decimal totalRefunded = returnsTodayList.Sum(r =>
+                r.SalePaymentMethod == "Credito" ? r.CashRefundedAmount : r.TotalRefunded);
 
             var netSales = Math.Max(0m, grossSales - totalRefunded);
 
-            // Desglose por método de pago agrupado en memoria
-            var paymentMethods = salesList
-                .GroupBy(s => s.PaymentMethod)
+            // Desglose por método de pago en caja (ventas de contado + abonos recibidos por su método de pago)
+            var cashAndPaymentsCombined = cashSalesList
+                .Select(s => new { Method = s.PaymentMethod, Amount = s.TotalAmount })
+                .Concat(creditPaymentsToday.Select(cp => new { Method = cp.PaymentMethod, Amount = cp.Amount }));
+
+            var paymentMethods = cashAndPaymentsCombined
+                .GroupBy(x => x.Method)
                 .Select(g => new PaymentMethodSummaryDto
                 {
                     Method = g.Key,
-                    TotalAmount = g.Sum(s => s.TotalAmount),
+                    TotalAmount = g.Sum(x => x.Amount),
                     Count = g.Count()
                 })
                 .OrderByDescending(pm => pm.TotalAmount)
                 .ToList();
+
+            // Si hubo ventas a crédito hoy, también agregamos el indicador informativo de cuántos tickets a crédito salieron
+            if (creditSalesList.Any())
+            {
+                paymentMethods.Add(new PaymentMethodSummaryDto
+                {
+                    Method = "Credito (Por Cobrar)",
+                    TotalAmount = creditSalesTodayAmount,
+                    Count = creditSalesList.Count
+                });
+            }
+
+            decimal totalPendingReceivables = await _context.CreditAccounts
+                .AsNoTracking()
+                .Where(ca => ca.Balance > 0 && ca.Status != CreditAccountStatus.Cancelado.ToString())
+                .SumAsync(ca => (decimal?)ca.Balance) ?? 0m;
 
             // 2. Top productos más vendidos hoy
             var detailsQuery = _context.SaleDetails
@@ -427,6 +590,9 @@ namespace Api_Tlapaleria.Services
                 GrossSalesAmount = grossSales,
                 TotalRefundedAmount = totalRefunded,
                 TotalTicketsCount = totalTicketsCount,
+                CreditSalesAmountToday = creditSalesTodayAmount,
+                CreditPaymentsCollectedToday = creditPaymentsCollectedToday,
+                TotalPendingReceivables = totalPendingReceivables,
                 IsGlobal = canViewAllSales,
                 ScopeLabel = canViewAllSales ? "Ventas Globales (Toda la tienda)" : "Mis Ventas (Tu turno)",
                 PaymentMethods = paymentMethods,

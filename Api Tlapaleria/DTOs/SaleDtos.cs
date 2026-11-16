@@ -15,8 +15,8 @@ namespace Api_Tlapaleria.DTOs
     public class CreateSaleDto
     {
         [Required]
-        [RegularExpression("^(Efectivo|Tarjeta|Transferencia)$")]
-        public string PaymentMethod { get; set; }
+        [RegularExpression("^(Efectivo|Tarjeta|Transferencia|Credito)$", ErrorMessage = "El método de pago debe ser Efectivo, Tarjeta, Transferencia o Credito.")]
+        public string PaymentMethod { get; set; } = string.Empty;
 
         [MaxLength(100, ErrorMessage = "La referencia no puede exceder los 100 caracteres.")]
         public string? PaymentReference { get; set; }
@@ -33,5 +33,21 @@ namespace Api_Tlapaleria.DTOs
 
         [Range(0, 9999999.99, ErrorMessage = "El monto de descuento no puede ser negativo.")]
         public decimal? DiscountAmount { get; set; }
+
+        // --- CAMPOS PARA VENTA A CRÉDITO (O ASIGNACIÓN DE CLIENTE) ---
+        public int? CustomerId { get; set; }
+
+        // Anticipo / pago parcial opcional al momento de llevarse la mercancía a crédito
+        [Range(0, 9999999.99, ErrorMessage = "El anticipo no puede ser negativo.")]
+        public decimal? InitialPayment { get; set; }
+
+        [RegularExpression("^(Efectivo|Tarjeta|Transferencia)$", ErrorMessage = "El método de pago del anticipo debe ser Efectivo, Tarjeta o Transferencia.")]
+        public string? InitialPaymentMethod { get; set; }
+
+        // Fecha compromiso de pago opcional para la cuenta de crédito
+        public DateTime? DueDate { get; set; }
+
+        [MaxLength(255, ErrorMessage = "La nota de crédito no puede exceder los 255 caracteres.")]
+        public string? CreditNotes { get; set; }
     }
 }

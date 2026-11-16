@@ -40,6 +40,11 @@ namespace Api_Tlapaleria.Models
         [ForeignKey("UserId")]
         public User? User { get; set; }
 
+        // Relación opcional con Cliente (obligatoria cuando PaymentMethod == "Credito")
+        public int? CustomerId { get; set; }
+        [ForeignKey("CustomerId")]
+        public Customer? Customer { get; set; }
+
         // El estado booleano que agregamos para el corte de caja
         public bool IsActive { get; set; } = true;
 

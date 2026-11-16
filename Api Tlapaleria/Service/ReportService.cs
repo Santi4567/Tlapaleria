@@ -72,46 +72,93 @@ namespace Api_Tlapaleria.Services
                 .Where(s => s.IsActive && s.CreatedAt >= effectiveStart && s.CreatedAt <= effectiveEnd)
                 .AsQueryable();
 
+            var cashSalesQuery = salesQuery
+                .Where(s => s.PaymentMethod != "Credito");
+
             var returnsQuery = _context.Returns
-                .Where(r => r.Sale.IsActive && r.CreatedAt >= effectiveStart && r.CreatedAt <= effectiveEnd)
+                .Where(r => r.Sale!.IsActive && r.CreatedAt >= effectiveStart && r.CreatedAt <= effectiveEnd)
                 .AsQueryable();
 
-            // 3. Obtener Totales Generales (Resumen)
-            var totalSalesCount = await salesQuery.CountAsync();
-            var grossAmount = await salesQuery.SumAsync(s => (decimal?)s.TotalAmount) ?? 0m;
-            var returnsAmount = await returnsQuery.SumAsync(r => (decimal?)r.TotalRefunded) ?? 0m;
-
-            // Costo total de lo vendido (todas las líneas de las ventas del rango)
-            var costOfGoodsSold = await salesQuery
-                .SelectMany(s => s.Details)
-                .SumAsync(d => (decimal?)d.SupplierCostSubtotal) ?? 0m;
-
-            // Costo de lo devuelto (usando el ancla SaleDetailId)
-            var costOfReturnedGoods = await _context.ReturnDetails
-                .Where(rd => rd.Return!.Sale!.IsActive && returnsQuery.Select(r => r.Id).Contains(rd.ReturnId))
-                .SumAsync(rd => (decimal?)(rd.QuantityReturned * rd.SaleDetail!.SupplierPriceAtSale)) ?? 0m;
-
-            var netCost = costOfGoodsSold - costOfReturnedGoods;
-            var realProfit = (grossAmount - returnsAmount) - netCost;
-
-            // 4. Extraer eventos con su timestamp exacto para agrupar según el periodo
-            var rawSales = await salesQuery
-                .Select(s => new
+            // Abonos / Anticipos de ventas a crédito efectivamente cobrados en el periodo
+            var creditPaymentsInPeriod = await _context.CreditPayments
+                .AsNoTracking()
+                .Where(cp => cp.CreditAccount != null && cp.CreditAccount.Sale != null && cp.CreditAccount.Sale.IsActive &&
+                             cp.CreatedAt >= effectiveStart && cp.CreatedAt <= effectiveEnd)
+                .Select(cp => new
                 {
-                    s.CreatedAt,
-                    s.TotalAmount,
-                    Cost = s.Details.Sum(d => (decimal?)d.SupplierCostSubtotal) ?? 0m
+                    cp.CreatedAt,
+                    cp.Amount,
+                    OriginalSaleAmount = cp.CreditAccount!.OriginalAmount,
+                    SaleTotalCost = cp.CreditAccount.Sale!.Details.Sum(d => (decimal?)d.SupplierCostSubtotal) ?? 0m
                 })
                 .ToListAsync();
+
+            decimal creditPaymentsCollected = creditPaymentsInPeriod.Sum(cp => cp.Amount);
+            decimal creditPaymentsProportionalCost = creditPaymentsInPeriod.Sum(cp =>
+                cp.OriginalSaleAmount > 0m
+                    ? Math.Round(cp.SaleTotalCost * (cp.Amount / cp.OriginalSaleAmount), 2, MidpointRounding.AwayFromZero)
+                    : 0m);
+
+            // 3. Obtener Totales Generales (Resumen basado en lo cobrado en Caja + Abonos)
+            var totalSalesCount = await salesQuery.CountAsync();
+            var cashGrossAmount = await cashSalesQuery.SumAsync(s => (decimal?)s.TotalAmount) ?? 0m;
+            var grossAmount = cashGrossAmount + creditPaymentsCollected;
 
             var rawReturns = await returnsQuery
                 .Select(r => new
                 {
                     r.CreatedAt,
                     r.TotalRefunded,
+                    r.CashRefundedAmount,
+                    SalePaymentMethod = r.Sale != null ? r.Sale.PaymentMethod : "Efectivo",
                     ReturnedCost = r.Details.Sum(rd => (decimal?)(rd.QuantityReturned * rd.SaleDetail!.SupplierPriceAtSale)) ?? 0m
                 })
                 .ToListAsync();
+
+            var returnsAmount = rawReturns.Sum(r => r.SalePaymentMethod == "Credito" ? r.CashRefundedAmount : r.TotalRefunded);
+
+            // Costo total de lo vendido de contado + costo proporcional de los abonos cobrados
+            var cashCostOfGoodsSold = await cashSalesQuery
+                .SelectMany(s => s.Details)
+                .SumAsync(d => (decimal?)d.SupplierCostSubtotal) ?? 0m;
+
+            var costOfGoodsSold = cashCostOfGoodsSold + creditPaymentsProportionalCost;
+
+            // Costo de lo devuelto en ventas de contado (o excedente en efectivo de crédito)
+            var costOfReturnedGoods = rawReturns.Sum(r =>
+            {
+                if (r.SalePaymentMethod != "Credito") return r.ReturnedCost;
+                if (r.TotalRefunded <= 0m || r.CashRefundedAmount <= 0m) return 0m;
+                return Math.Round(r.ReturnedCost * (r.CashRefundedAmount / r.TotalRefunded), 2, MidpointRounding.AwayFromZero);
+            });
+
+            var netCost = costOfGoodsSold - costOfReturnedGoods;
+            var realProfit = (grossAmount - returnsAmount) - netCost;
+
+            // 4. Extraer eventos con su timestamp exacto para agrupar según el periodo
+            var rawCashSales = await cashSalesQuery
+                .Select(s => new
+                {
+                    s.CreatedAt,
+                    Amount = s.TotalAmount,
+                    Cost = s.Details.Sum(d => (decimal?)d.SupplierCostSubtotal) ?? 0m,
+                    IsTicket = true
+                })
+                .ToListAsync();
+
+            var rawCreditPaymentEvents = creditPaymentsInPeriod
+                .Select(cp => new
+                {
+                    cp.CreatedAt,
+                    cp.Amount,
+                    Cost = cp.OriginalSaleAmount > 0m
+                        ? Math.Round(cp.SaleTotalCost * (cp.Amount / cp.OriginalSaleAmount), 2, MidpointRounding.AwayFromZero)
+                        : 0m,
+                    IsTicket = false
+                })
+                .ToList();
+
+            var rawSales = rawCashSales.Concat(rawCreditPaymentEvents).ToList();
 
             // 5. Agrupar y formatear etiquetas según el periodo (Hora, Semana, Mes o Día)
             string[] mesesAbrev = { "", "Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Sep", "Oct", "Nov", "Dic" };
@@ -148,8 +195,8 @@ namespace Api_Tlapaleria.Services
                     g => g.Key,
                     g => new
                     {
-                        Count = g.Count(),
-                        Gross = g.Sum(x => x.TotalAmount),
+                        Count = g.Count(x => x.IsTicket),
+                        Gross = g.Sum(x => x.Amount),
                         TotalCost = g.Sum(x => x.Cost)
                     });
 
@@ -159,8 +206,13 @@ namespace Api_Tlapaleria.Services
                     g => g.Key,
                     g => new
                     {
-                        Refunded = g.Sum(x => x.TotalRefunded),
-                        ReturnedCost = g.Sum(x => x.ReturnedCost)
+                        Refunded = g.Sum(x => x.SalePaymentMethod == "Credito" ? x.CashRefundedAmount : x.TotalRefunded),
+                        ReturnedCost = g.Sum(x =>
+                        {
+                            if (x.SalePaymentMethod != "Credito") return x.ReturnedCost;
+                            if (x.TotalRefunded <= 0m || x.CashRefundedAmount <= 0m) return 0m;
+                            return Math.Round(x.ReturnedCost * (x.CashRefundedAmount / x.TotalRefunded), 2, MidpointRounding.AwayFromZero);
+                        })
                     });
 
             var allBuckets = salesGrouped.Keys
@@ -206,6 +258,7 @@ namespace Api_Tlapaleria.Services
                     s.Folio,
                     s.CreatedAt,
                     CashierName = s.User != null ? s.User.Name : "Cajero",
+                    CustomerName = s.Customer != null ? s.Customer.Name : null,
                     s.PaymentMethod,
                     s.PaymentReference,
                     ItemsCount = s.Details.Count(),
@@ -232,6 +285,19 @@ namespace Api_Tlapaleria.Services
                     .ToDictionaryAsync(x => x.SaleId, x => (x.RefundedAmount, x.ReturnedCost))
                 : new Dictionary<int, (decimal RefundedAmount, decimal ReturnedCost)>();
 
+            var creditAccountsBySale = periodSaleIds.Any()
+                ? await _context.CreditAccounts
+                    .AsNoTracking()
+                    .Where(ca => periodSaleIds.Contains(ca.SaleId))
+                    .Select(ca => new
+                    {
+                        ca.SaleId,
+                        ca.PaidAmount,
+                        ca.Balance
+                    })
+                    .ToDictionaryAsync(x => x.SaleId, x => (x.PaidAmount, x.Balance))
+                : new Dictionary<int, (decimal PaidAmount, decimal Balance)>();
+
             var periodSalesList = rawPeriodSales.Select(s =>
             {
                 bool hasRefund = refundsBySale.TryGetValue(s.Id, out var refData);
@@ -239,7 +305,20 @@ namespace Api_Tlapaleria.Services
                 decimal returnedCost = hasRefund ? refData.ReturnedCost : 0m;
                 decimal netAmt = Math.Max(0m, s.TotalAmount - refunded);
                 decimal netSaleCost = Math.Max(0m, s.TotalCost - returnedCost);
+
+                decimal paidAmt = netAmt;
+                decimal pendingBal = 0m;
                 decimal profit = s.IsActive ? (netAmt - netSaleCost) : 0m;
+
+                if (s.PaymentMethod == "Credito" && creditAccountsBySale.TryGetValue(s.Id, out var credData))
+                {
+                    paidAmt = credData.PaidAmount;
+                    pendingBal = credData.Balance;
+                    decimal propCost = s.TotalAmount > 0m
+                        ? Math.Round(s.TotalCost * (paidAmt / s.TotalAmount), 2, MidpointRounding.AwayFromZero)
+                        : 0m;
+                    profit = s.IsActive ? (paidAmt - propCost) : 0m;
+                }
 
                 return new FinancialSaleItemDto
                 {
@@ -247,12 +326,15 @@ namespace Api_Tlapaleria.Services
                     Folio = s.Folio,
                     CreatedAt = s.CreatedAt,
                     CashierName = s.CashierName,
+                    CustomerName = s.CustomerName,
                     PaymentMethod = s.PaymentMethod,
                     PaymentReference = s.PaymentReference,
                     ItemsCount = s.ItemsCount,
                     GrossAmount = s.TotalAmount,
                     RefundedAmount = refunded,
                     NetAmount = s.IsActive ? netAmt : 0m,
+                    PaidAmount = s.IsActive ? paidAmt : 0m,
+                    PendingBalance = s.IsActive ? pendingBal : 0m,
                     RealProfitAmount = profit,
                     IsActive = s.IsActive
                 };
@@ -272,6 +354,8 @@ namespace Api_Tlapaleria.Services
                     UserName = r.User != null ? r.User.Name : "Usuario",
                     Reason = r.Reason,
                     TotalRefunded = r.TotalRefunded,
+                    AppliedToDebtAmount = r.AppliedToDebtAmount,
+                    CashRefundedAmount = r.CashRefundedAmount,
                     IsFullCancellation = r.Sale != null && (!r.Sale.IsActive || (r.Sale.TotalAmount > 0 && _context.Returns.Where(x => x.SaleId == r.SaleId).Sum(x => x.TotalRefunded) >= r.Sale.TotalAmount)),
                     Items = r.Details.Select(rd => new FinancialReturnItemDetailDto
                     {
@@ -395,6 +479,8 @@ namespace Api_Tlapaleria.Services
                 NetSalesAmount = grossAmount - returnsAmount,
                 CostOfGoodsSold = netCost,
                 RealProfitAmount = realProfit,
+                CreditPaymentsCollectedAmount = creditPaymentsCollected,
+                PendingCreditSalesAmount = periodSalesList.Where(s => s.IsActive).Sum(s => s.PendingBalance),
                 ChartData = chartData,
                 Sales = periodSalesList,
                 Returns = periodReturnsList,

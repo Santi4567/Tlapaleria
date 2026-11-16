@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Api_Tlapaleria.DTOs;
 using Api_Tlapaleria.Extensions;
 using Api_Tlapaleria.Services;
@@ -14,6 +15,23 @@ namespace Api_Tlapaleria.Hubs
         public InventoryHub(IStockReservationService stockReservationService)
         {
             _stockReservationService = stockReservationService;
+        }
+
+        public override async Task OnConnectedAsync()
+        {
+            var role = Context.User?.FindFirst(ClaimTypes.Role)?.Value;
+            if (!string.IsNullOrEmpty(role))
+            {
+                await Groups.AddToGroupAsync(Context.ConnectionId, $"role_{role}");
+            }
+
+            var userId = Context.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (!string.IsNullOrEmpty(userId))
+            {
+                await Groups.AddToGroupAsync(Context.ConnectionId, $"user_{userId}");
+            }
+
+            await base.OnConnectedAsync();
         }
 
         // Apartar o actualizar la cantidad de una presentación en la lista de venta activa de esta caja

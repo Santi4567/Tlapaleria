@@ -81,5 +81,10 @@ namespace Api_Tlapaleria.Data
         public DbSet<ReturnDetail> ReturnDetails { get; set; }//<--- Modelo de la tabla de ReturnDetails
         public DbSet<Invoice> Invoices { get; set; } // <-- Modelo de la tabla de Facturas (Facturapi)
         public DbSet<BusinessConfig> BusinessConfigs { get; set; } // <-- Configuración del Negocio y Facturación
+
+        // --- MÓDULO DE CLIENTES Y CUENTAS POR COBRAR (CRÉDITO / FIADO) ---
+        public DbSet<Customer> Customers { get; set; }
+        public DbSet<CreditAccount> CreditAccounts { get; set; }
+        public DbSet<CreditPayment> CreditPayments { get; set; }
     }
 }
