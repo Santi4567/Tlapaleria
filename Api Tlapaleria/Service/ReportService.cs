@@ -32,6 +32,13 @@ namespace Api_Tlapaleria.Services
                     effectiveEnd = targetDay.AddDays(1).AddTicks(-1);
                     break;
 
+                case FinancialReportPeriod.Week: // 4: SEMANA (Lunes a Domingo)
+                    var refDate = startDate?.Date ?? now.Date;
+                    int diff = (7 + (refDate.DayOfWeek - DayOfWeek.Monday)) % 7;
+                    effectiveStart = refDate.AddDays(-1 * diff);
+                    effectiveEnd = effectiveStart.AddDays(7).AddTicks(-1);
+                    break;
+
                 case FinancialReportPeriod.Month: // 2: MES (actual o el mes de startDate)
                     var targetMonth = startDate ?? now;
                     effectiveStart = new DateTime(targetMonth.Year, targetMonth.Month, 1);
@@ -170,6 +177,11 @@ namespace Api_Tlapaleria.Services
                     case FinancialReportPeriod.Day:
                         // Solo en HOY aparece la hora: ej. "09:00", "14:00"
                         return (dt.Hour, $"{dt.Hour:D2}:00");
+
+                    case FinancialReportPeriod.Week:
+                        // Días de la semana con fecha corta: ej. "Lun 16/11"
+                        string[] diasAbrev = { "Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb" };
+                        return (int.Parse(dt.ToString("yyyyMMdd")), $"{diasAbrev[(int)dt.DayOfWeek]} {dt:dd/MM}");
 
                     case FinancialReportPeriod.Month:
                         // Semanas con su rango exacto de días: ej. "Sem 1 (01-07)"
@@ -356,7 +368,10 @@ namespace Api_Tlapaleria.Services
                     TotalRefunded = r.TotalRefunded,
                     AppliedToDebtAmount = r.AppliedToDebtAmount,
                     CashRefundedAmount = r.CashRefundedAmount,
-                    IsFullCancellation = r.Sale != null && (!r.Sale.IsActive || (r.Sale.TotalAmount > 0 && _context.Returns.Where(x => x.SaleId == r.SaleId).Sum(x => x.TotalRefunded) >= r.Sale.TotalAmount)),
+                    IsFullCancellation = r.Sale != null && (!r.Sale.IsActive ||
+                        (r.Sale.TotalAmount > 0
+                            ? _context.Returns.Where(x => x.SaleId == r.SaleId).Sum(x => x.TotalRefunded) >= r.Sale.TotalAmount
+                            : _context.ReturnDetails.Where(rd => rd.SaleDetail != null && rd.SaleDetail.SaleId == r.SaleId).Sum(rd => rd.QuantityReturned) >= _context.SaleDetails.Where(sd => sd.SaleId == r.SaleId).Sum(sd => sd.Quantity))),
                     Items = r.Details.Select(rd => new FinancialReturnItemDetailDto
                     {
                         SaleDetailId = rd.SaleDetailId,
@@ -1087,6 +1102,680 @@ namespace Api_Tlapaleria.Services
                 TotalChargedClient = productsReport.Sum(x => x.TotalChargedClient),
                 TotalProfitAmount = productsReport.Sum(x => x.ProfitAmount),
                 Products = productsReport
+            };
+        }
+
+        // ==============================================================================
+        // -- REPORTE DE VENTAS POR USUARIO (QUÉ VENDIÓ CADA USUARIO) --
+        // ==============================================================================
+
+        private (DateTime? Start, DateTime? End) ResolveUserPeriodDates(
+            DateTime? startDate,
+            DateTime? endDate,
+            UserSalesReportPeriod periodType)
+        {
+            var now = DateTime.Now;
+            DateTime? effectiveStart = null;
+            DateTime? effectiveEnd = null;
+
+            switch (periodType)
+            {
+                case UserSalesReportPeriod.Day: // 1: DÍA / HOY (o el día enviado en startDate)
+                    var targetDay = startDate?.Date ?? now.Date;
+                    effectiveStart = targetDay;
+                    effectiveEnd = targetDay.AddDays(1).AddTicks(-1);
+                    break;
+
+                case UserSalesReportPeriod.Week: // 2: SEMANA (Lunes a Domingo)
+                    var refDate = startDate?.Date ?? now.Date;
+                    int diff = (7 + (refDate.DayOfWeek - DayOfWeek.Monday)) % 7;
+                    effectiveStart = refDate.AddDays(-1 * diff);
+                    effectiveEnd = effectiveStart.Value.AddDays(7).AddTicks(-1);
+                    break;
+
+                case UserSalesReportPeriod.Month: // 3: MES (actual o el mes de startDate)
+                    var targetMonth = startDate ?? now;
+                    effectiveStart = new DateTime(targetMonth.Year, targetMonth.Month, 1);
+                    effectiveEnd = effectiveStart.Value.AddMonths(1).AddTicks(-1);
+                    break;
+
+                case UserSalesReportPeriod.Year: // 4: AÑO (actual o el año de startDate)
+                    var targetYear = startDate?.Year ?? now.Year;
+                    effectiveStart = new DateTime(targetYear, 1, 1);
+                    effectiveEnd = new DateTime(targetYear, 12, 31, 23, 59, 59, 999);
+                    break;
+
+                case UserSalesReportPeriod.AllTime: // 5: TODO EL HISTORIAL
+                    effectiveStart = null;
+                    effectiveEnd = null;
+                    break;
+
+                case UserSalesReportPeriod.CustomRange: // 0: Rango libre de fechas
+                default:
+                    if (startDate.HasValue || endDate.HasValue)
+                    {
+                        var start = startDate?.Date ?? endDate!.Value.Date;
+                        var end = endDate?.Date ?? startDate!.Value.Date;
+
+                        if (start > end)
+                            (start, end) = (end, start);
+
+                        effectiveStart = start;
+                        effectiveEnd = end.AddDays(1).AddTicks(-1);
+
+                        if ((effectiveEnd.Value - effectiveStart.Value).TotalDays > 731)
+                            throw new Exception("El rango de fechas no puede exceder los 2 años.");
+                    }
+                    else
+                    {
+                        var today = now.Date;
+                        effectiveStart = today;
+                        effectiveEnd = today.AddDays(1).AddTicks(-1);
+                    }
+                    break;
+            }
+
+            return (effectiveStart, effectiveEnd);
+        }
+
+        public async Task<UserSalesReportResponseDto> GetUsersSalesReportAsync(
+            DateTime? startDate = null,
+            DateTime? endDate = null,
+            UserSalesReportPeriod periodType = UserSalesReportPeriod.Day,
+            int? userId = null)
+        {
+            var (effectiveStart, effectiveEnd) = ResolveUserPeriodDates(startDate, endDate, periodType);
+
+            // 1. Filtrar las ventas activas en el periodo y por usuario si se especificó
+            var salesQuery = _context.Sales
+                .AsNoTracking()
+                .Include(s => s.User)
+                    .ThenInclude(u => u!.Rol)
+                .Where(s => s.IsActive);
+
+            if (effectiveStart.HasValue && effectiveEnd.HasValue)
+            {
+                salesQuery = salesQuery.Where(s => s.CreatedAt >= effectiveStart.Value && s.CreatedAt <= effectiveEnd.Value);
+            }
+
+            if (userId.HasValue)
+            {
+                salesQuery = salesQuery.Where(s => s.UserId == userId.Value);
+            }
+
+            var rawSales = await (
+                from s in salesQuery
+                join u in _context.Users.AsNoTracking() on s.UserId equals u.Id into uGroup
+                from u in uGroup.DefaultIfEmpty()
+                join r in _context.Roles.AsNoTracking() on u.RolId equals r.Id into rGroup
+                from r in rGroup.DefaultIfEmpty()
+                select new
+                {
+                    s.Id,
+                    s.Folio,
+                    s.CreatedAt,
+                    s.UserId,
+                    Username = u != null ? u.Username : string.Empty,
+                    FullName = u != null ? u.Name : "Desconocido",
+                    RoleName = r != null ? r.Nombre : "Sin Rol",
+                    s.PaymentMethod,
+                    s.TotalAmount
+                }
+            ).ToListAsync();
+
+            if (!rawSales.Any())
+            {
+                if (userId.HasValue)
+                {
+                    var specificUser = await _context.Users
+                        .Include(u => u.Rol)
+                        .AsNoTracking()
+                        .FirstOrDefaultAsync(u => u.Id == userId.Value);
+
+                    if (specificUser != null)
+                    {
+                        return new UserSalesReportResponseDto
+                        {
+                            PeriodType = periodType.ToString(),
+                            StartDate = effectiveStart,
+                            EndDate = effectiveEnd,
+                            TotalUsersCount = 1,
+                            Users = new List<UserSalesReportItemDto>
+                            {
+                                new UserSalesReportItemDto
+                                {
+                                    UserId = specificUser.Id,
+                                    Username = specificUser.Username,
+                                    FullName = specificUser.Name,
+                                    RoleName = specificUser.Rol?.Nombre ?? "Sin Rol"
+                                }
+                            }
+                        };
+                    }
+                }
+
+                return new UserSalesReportResponseDto
+                {
+                    PeriodType = periodType.ToString(),
+                    StartDate = effectiveStart,
+                    EndDate = effectiveEnd
+                };
+            }
+
+            var saleIds = rawSales.Select(s => s.Id).ToList();
+
+            // 2. Traer partidas de las ventas del periodo
+            var rawDetails = await (
+                from sd in _context.SaleDetails.AsNoTracking()
+                join s in _context.Sales.AsNoTracking() on sd.SaleId equals s.Id
+                join p in _context.Products.AsNoTracking() on sd.ProductId equals p.Id
+                join pp in _context.ProductPresentations.AsNoTracking() on sd.PresentationId equals pp.Id
+                where sd.IsActive && s.IsActive && saleIds.Contains(s.Id)
+                select new
+                {
+                    SaleDetailId = sd.Id,
+                    SaleId = sd.SaleId,
+                    UserId = s.UserId,
+                    ProductId = p.Id,
+                    PresentationId = pp.Id,
+                    InternalCode = p.InternalCode,
+                    ProductName = p.Name,
+                    PresentationName = pp.Name,
+                    Brand = sd.Brand ?? p.Brand,
+                    Quantity = sd.Quantity,
+                    UnitPrice = sd.UnitPrice,
+                    Subtotal = sd.Subtotal,
+                    SupplierPriceAtSale = sd.SupplierPriceAtSale,
+                    CatalogSupplierPrice = pp.SupplierPrice
+                }
+            ).ToListAsync();
+
+            // 3. Devoluciones de estas partidas
+            var detailIds = rawDetails.Select(d => d.SaleDetailId).ToList();
+            var returnsList = detailIds.Any()
+                ? await _context.ReturnDetails
+                    .AsNoTracking()
+                    .Where(rd => detailIds.Contains(rd.SaleDetailId))
+                    .GroupBy(rd => rd.SaleDetailId)
+                    .Select(g => new
+                    {
+                        SaleDetailId = g.Key,
+                        CantDevuelta = g.Sum(x => x.QuantityReturned),
+                        MontoDevuelto = g.Sum(x => x.RefundAmount)
+                    })
+                    .ToListAsync()
+                : new();
+
+            var returnsByDetail = returnsList.ToDictionary(
+                x => x.SaleDetailId,
+                x => (CantDevuelta: x.CantDevuelta, MontoDevuelto: x.MontoDevuelto)
+            );
+
+            // 4. Devoluciones a nivel ticket/venta
+            var refundsList = saleIds.Any()
+                ? await _context.Returns
+                    .AsNoTracking()
+                    .Where(r => saleIds.Contains(r.SaleId))
+                    .GroupBy(r => r.SaleId)
+                    .Select(g => new
+                    {
+                        SaleId = g.Key,
+                        RefundedAmount = g.Sum(x => x.TotalRefunded)
+                    })
+                    .ToListAsync()
+                : new();
+
+            var refundsBySale = refundsList.ToDictionary(x => x.SaleId, x => x.RefundedAmount);
+
+            // 5. Agrupar por usuario
+            var usersGrouped = rawSales
+                .GroupBy(s => new { s.UserId, s.Username, s.FullName, s.RoleName })
+                .Select(ug =>
+                {
+                    var userSaleList = ug.ToList();
+                    var userSaleIds = userSaleList.Select(s => s.Id).ToHashSet();
+                    var userDetailsList = rawDetails.Where(d => userSaleIds.Contains(d.SaleId)).ToList();
+
+                    // Lista de productos vendidos por este usuario
+                    var userProducts = userDetailsList
+                        .GroupBy(d => new
+                        {
+                            d.ProductId,
+                            d.PresentationId,
+                            d.InternalCode,
+                            d.ProductName,
+                            d.PresentationName
+                        })
+                        .Select(pg =>
+                        {
+                            int ticketsCount = pg
+                                .Where(d =>
+                                {
+                                    var cantDev = returnsByDetail.TryGetValue(d.SaleDetailId, out var r) ? r.CantDevuelta : 0m;
+                                    return (d.Quantity - cantDev) > 0m;
+                                })
+                                .Select(d => d.SaleId)
+                                .Distinct()
+                                .Count();
+
+                            decimal totalSold = 0m;
+                            decimal totalReturned = 0m;
+                            decimal totalCobrado = 0m;
+                            decimal tuGanancia = 0m;
+                            decimal unitPublicPrice = 0m;
+                            decimal unitCost = 0m;
+
+                            foreach (var d in pg)
+                            {
+                                var cantDev = returnsByDetail.TryGetValue(d.SaleDetailId, out var r) ? r.CantDevuelta : 0m;
+                                var montoDev = returnsByDetail.TryGetValue(d.SaleDetailId, out var mr) ? mr.MontoDevuelto : 0m;
+
+                                decimal effectiveQty = d.Quantity - cantDev;
+                                decimal cost = d.SupplierPriceAtSale > 0m ? d.SupplierPriceAtSale : d.CatalogSupplierPrice;
+
+                                decimal rowSupplierCost = Math.Round(effectiveQty * cost, 2, MidpointRounding.AwayFromZero);
+                                decimal rowNetCharged = d.Subtotal - montoDev;
+                                decimal rowProfit = rowNetCharged - rowSupplierCost;
+
+                                totalSold += d.Quantity;
+                                totalReturned += cantDev;
+                                totalCobrado += rowNetCharged;
+                                tuGanancia += rowProfit;
+                                unitCost = cost;
+                                unitPublicPrice = d.UnitPrice;
+                            }
+
+                            return new UserProductSalesItemDto
+                            {
+                                ProductId = pg.Key.ProductId,
+                                PresentationId = pg.Key.PresentationId,
+                                InternalCode = pg.Key.InternalCode,
+                                ProductName = pg.Key.ProductName,
+                                PresentationName = pg.Key.PresentationName,
+                                Brand = pg.Last().Brand,
+                                TicketsCount = ticketsCount,
+                                QuantitySold = totalSold,
+                                QuantityReturned = totalReturned,
+                                NetQuantity = totalSold - totalReturned,
+                                UnitSupplierCost = unitCost,
+                                UnitPrice = unitPublicPrice,
+                                GrossAmount = pg.Sum(x => x.Subtotal),
+                                RefundedAmount = pg.Sum(x => returnsByDetail.TryGetValue(x.SaleDetailId, out var mr) ? mr.MontoDevuelto : 0m),
+                                NetAmount = totalCobrado,
+                                RealProfitAmount = tuGanancia
+                            };
+                        })
+                        .OrderByDescending(x => x.NetAmount)
+                        .ThenByDescending(x => x.NetQuantity)
+                        .ToList();
+
+                    // Totales del usuario
+                    int userTicketsCount = userSaleList.Count;
+                    decimal userGrossSales = userSaleList.Sum(s => s.TotalAmount);
+                    decimal userRefunded = userSaleList.Sum(s => refundsBySale.TryGetValue(s.Id, out var refAmt) ? refAmt : 0m);
+                    decimal userNetSales = userGrossSales - userRefunded;
+                    decimal userCostOfGoods = userProducts.Sum(p => p.NetAmount - p.RealProfitAmount);
+                    decimal userRealProfit = userNetSales - userCostOfGoods;
+                    decimal userMargin = userNetSales > 0 ? Math.Round((userRealProfit / userNetSales) * 100m, 2) : 0m;
+
+                    // Desglose de métodos de pago
+                    var paymentMethods = userSaleList
+                        .GroupBy(s => s.PaymentMethod)
+                        .Select(pmg => new PaymentMethodSummaryDto
+                        {
+                            Method = pmg.Key,
+                            Count = pmg.Count(),
+                            TotalAmount = pmg.Sum(s => s.TotalAmount)
+                        })
+                        .OrderByDescending(pm => pm.TotalAmount)
+                        .ToList();
+
+                    return new UserSalesReportItemDto
+                    {
+                        UserId = ug.Key.UserId,
+                        Username = ug.Key.Username,
+                        FullName = ug.Key.FullName,
+                        RoleName = ug.Key.RoleName,
+                        TicketsCount = userTicketsCount,
+                        GrossSalesAmount = userGrossSales,
+                        TotalRefundedAmount = userRefunded,
+                        NetSalesAmount = userNetSales,
+                        CostOfGoodsSold = userCostOfGoods,
+                        RealProfitAmount = userRealProfit,
+                        ProfitMarginPercent = userMargin,
+                        TotalQuantitySold = userProducts.Sum(p => p.QuantitySold),
+                        TotalQuantityReturned = userProducts.Sum(p => p.QuantityReturned),
+                        NetQuantitySold = userProducts.Sum(p => p.NetQuantity),
+                        PaymentMethodsSummary = paymentMethods,
+                        Products = userProducts
+                    };
+                })
+                .OrderByDescending(u => u.NetSalesAmount)
+                .ToList();
+
+            // Desglose general de métodos de pago
+            var globalPaymentMethods = rawSales
+                .GroupBy(s => s.PaymentMethod)
+                .Select(pmg => new PaymentMethodSummaryDto
+                {
+                    Method = pmg.Key,
+                    Count = pmg.Count(),
+                    TotalAmount = pmg.Sum(s => s.TotalAmount)
+                })
+                .OrderByDescending(pm => pm.TotalAmount)
+                .ToList();
+
+            return new UserSalesReportResponseDto
+            {
+                PeriodType = periodType.ToString(),
+                StartDate = effectiveStart,
+                EndDate = effectiveEnd,
+                TotalUsersCount = usersGrouped.Count,
+                TotalTicketsCount = usersGrouped.Sum(u => u.TicketsCount),
+                TotalGrossSales = usersGrouped.Sum(u => u.GrossSalesAmount),
+                TotalRefundedAmount = usersGrouped.Sum(u => u.TotalRefundedAmount),
+                TotalNetSales = usersGrouped.Sum(u => u.NetSalesAmount),
+                TotalCostOfGoodsSold = usersGrouped.Sum(u => u.CostOfGoodsSold),
+                TotalProfitAmount = usersGrouped.Sum(u => u.RealProfitAmount),
+                TotalQuantitySold = usersGrouped.Sum(u => u.TotalQuantitySold),
+                PaymentMethodsSummary = globalPaymentMethods,
+                Users = usersGrouped
+            };
+        }
+
+        public async Task<UserSalesDetailResponseDto> GetUserSalesDetailAsync(
+            int userId,
+            DateTime? startDate = null,
+            DateTime? endDate = null,
+            UserSalesReportPeriod periodType = UserSalesReportPeriod.Day)
+        {
+            var user = await _context.Users
+                .Include(u => u.Rol)
+                .AsNoTracking()
+                .FirstOrDefaultAsync(u => u.Id == userId);
+
+            if (user == null)
+                throw new Exception($"El usuario con ID {userId} no fue encontrado.");
+
+            var (effectiveStart, effectiveEnd) = ResolveUserPeriodDates(startDate, endDate, periodType);
+
+            // Consultar ventas del usuario
+            var salesQuery = _context.Sales
+                .AsNoTracking()
+                .Include(s => s.Customer)
+                .Where(s => s.UserId == userId && s.IsActive);
+
+            if (effectiveStart.HasValue && effectiveEnd.HasValue)
+            {
+                salesQuery = salesQuery.Where(s => s.CreatedAt >= effectiveStart.Value && s.CreatedAt <= effectiveEnd.Value);
+            }
+
+            var rawSales = await salesQuery
+                .OrderByDescending(s => s.CreatedAt)
+                .Select(s => new
+                {
+                    s.Id,
+                    s.Folio,
+                    s.CreatedAt,
+                    CustomerName = s.Customer != null ? s.Customer.Name : null,
+                    s.PaymentMethod,
+                    s.PaymentReference,
+                    ItemsCount = s.Details.Count(),
+                    s.TotalAmount,
+                    TotalCost = s.Details.Sum(d => (decimal?)d.SupplierCostSubtotal) ?? 0m,
+                    s.IsActive
+                })
+                .ToListAsync();
+
+            if (!rawSales.Any())
+            {
+                return new UserSalesDetailResponseDto
+                {
+                    UserId = user.Id,
+                    Username = user.Username,
+                    FullName = user.Name,
+                    RoleName = user.Rol?.Nombre ?? "Sin Rol",
+                    PeriodType = periodType.ToString(),
+                    StartDate = effectiveStart,
+                    EndDate = effectiveEnd
+                };
+            }
+
+            var saleIds = rawSales.Select(s => s.Id).ToList();
+
+            // Devoluciones a nivel venta
+            var refundsList = await _context.Returns
+                .AsNoTracking()
+                .Where(r => saleIds.Contains(r.SaleId))
+                .GroupBy(r => r.SaleId)
+                .Select(g => new
+                {
+                    SaleId = g.Key,
+                    RefundedAmount = g.Sum(x => x.TotalRefunded)
+                })
+                .ToListAsync();
+
+            var refundsBySale = refundsList.ToDictionary(x => x.SaleId, x => x.RefundedAmount);
+
+            // Cuentas de crédito si aplica
+            var creditList = await _context.CreditAccounts
+                .AsNoTracking()
+                .Where(ca => saleIds.Contains(ca.SaleId))
+                .Select(ca => new
+                {
+                    ca.SaleId,
+                    ca.PaidAmount,
+                    ca.Balance
+                })
+                .ToListAsync();
+
+            var creditAccountsBySale = creditList.ToDictionary(
+                x => x.SaleId, 
+                x => (PaidAmount: x.PaidAmount, Balance: x.Balance)
+            );
+
+            // Partidas vendidas
+            var rawDetails = await (
+                from sd in _context.SaleDetails.AsNoTracking()
+                join s in _context.Sales.AsNoTracking() on sd.SaleId equals s.Id
+                join p in _context.Products.AsNoTracking() on sd.ProductId equals p.Id
+                join pp in _context.ProductPresentations.AsNoTracking() on sd.PresentationId equals pp.Id
+                where sd.IsActive && s.IsActive && saleIds.Contains(s.Id)
+                select new
+                {
+                    SaleDetailId = sd.Id,
+                    SaleId = sd.SaleId,
+                    ProductId = p.Id,
+                    PresentationId = pp.Id,
+                    InternalCode = p.InternalCode,
+                    ProductName = p.Name,
+                    PresentationName = pp.Name,
+                    Brand = sd.Brand ?? p.Brand,
+                    Quantity = sd.Quantity,
+                    UnitPrice = sd.UnitPrice,
+                    Subtotal = sd.Subtotal,
+                    SupplierPriceAtSale = sd.SupplierPriceAtSale,
+                    CatalogSupplierPrice = pp.SupplierPrice
+                }
+            ).ToListAsync();
+
+            var detailIds = rawDetails.Select(d => d.SaleDetailId).ToList();
+            var detailReturnsList = detailIds.Any()
+                ? await _context.ReturnDetails
+                    .AsNoTracking()
+                    .Where(rd => detailIds.Contains(rd.SaleDetailId))
+                    .GroupBy(rd => rd.SaleDetailId)
+                    .Select(g => new
+                    {
+                        SaleDetailId = g.Key,
+                        CantDevuelta = g.Sum(x => x.QuantityReturned),
+                        MontoDevuelto = g.Sum(x => x.RefundAmount)
+                    })
+                    .ToListAsync()
+                : new();
+
+            var returnsByDetail = detailReturnsList.ToDictionary(
+                x => x.SaleDetailId, 
+                x => (CantDevuelta: x.CantDevuelta, MontoDevuelto: x.MontoDevuelto)
+            );
+
+            // Lista de productos que vendió este usuario
+            var productsReport = rawDetails
+                .GroupBy(d => new
+                {
+                    d.ProductId,
+                    d.PresentationId,
+                    d.InternalCode,
+                    d.ProductName,
+                    d.PresentationName
+                })
+                .Select(pg =>
+                {
+                    int ticketsCount = pg
+                        .Where(d =>
+                        {
+                            var cantDev = returnsByDetail.TryGetValue(d.SaleDetailId, out var r) ? r.CantDevuelta : 0m;
+                            return (d.Quantity - cantDev) > 0m;
+                        })
+                        .Select(d => d.SaleId)
+                        .Distinct()
+                        .Count();
+
+                    decimal totalSold = 0m;
+                    decimal totalReturned = 0m;
+                    decimal totalCobrado = 0m;
+                    decimal tuGanancia = 0m;
+                    decimal unitPublicPrice = 0m;
+                    decimal unitCost = 0m;
+
+                    foreach (var d in pg)
+                    {
+                        var cantDev = returnsByDetail.TryGetValue(d.SaleDetailId, out var r) ? r.CantDevuelta : 0m;
+                        var montoDev = returnsByDetail.TryGetValue(d.SaleDetailId, out var mr) ? mr.MontoDevuelto : 0m;
+
+                        decimal effectiveQty = d.Quantity - cantDev;
+                        decimal cost = d.SupplierPriceAtSale > 0m ? d.SupplierPriceAtSale : d.CatalogSupplierPrice;
+
+                        decimal rowSupplierCost = Math.Round(effectiveQty * cost, 2, MidpointRounding.AwayFromZero);
+                        decimal rowNetCharged = d.Subtotal - montoDev;
+                        decimal rowProfit = rowNetCharged - rowSupplierCost;
+
+                        totalSold += d.Quantity;
+                        totalReturned += cantDev;
+                        totalCobrado += rowNetCharged;
+                        tuGanancia += rowProfit;
+                        unitCost = cost;
+                        unitPublicPrice = d.UnitPrice;
+                    }
+
+                    return new UserProductSalesItemDto
+                    {
+                        ProductId = pg.Key.ProductId,
+                        PresentationId = pg.Key.PresentationId,
+                        InternalCode = pg.Key.InternalCode,
+                        ProductName = pg.Key.ProductName,
+                        PresentationName = pg.Key.PresentationName,
+                        Brand = pg.Last().Brand,
+                        TicketsCount = ticketsCount,
+                        QuantitySold = totalSold,
+                        QuantityReturned = totalReturned,
+                        NetQuantity = totalSold - totalReturned,
+                        UnitSupplierCost = unitCost,
+                        UnitPrice = unitPublicPrice,
+                        GrossAmount = pg.Sum(x => x.Subtotal),
+                        RefundedAmount = pg.Sum(x => returnsByDetail.TryGetValue(x.SaleDetailId, out var mr) ? mr.MontoDevuelto : 0m),
+                        NetAmount = totalCobrado,
+                        RealProfitAmount = tuGanancia
+                    };
+                })
+                .OrderByDescending(x => x.NetAmount)
+                .ThenByDescending(x => x.NetQuantity)
+                .ToList();
+
+            // Lista de tickets / ventas formateadas
+            var salesList = rawSales.Select(s =>
+            {
+                decimal refunded = refundsBySale.TryGetValue(s.Id, out var refAmt) ? refAmt : 0m;
+                decimal returnedCost = s.TotalAmount > 0 ? Math.Round(s.TotalCost * (refunded / s.TotalAmount), 2, MidpointRounding.AwayFromZero) : 0m;
+                decimal netAmt = Math.Max(0m, s.TotalAmount - refunded);
+                decimal netSaleCost = Math.Max(0m, s.TotalCost - returnedCost);
+
+                decimal paidAmt = netAmt;
+                decimal pendingBal = 0m;
+                decimal profit = s.IsActive ? (netAmt - netSaleCost) : 0m;
+
+                if (s.PaymentMethod == "Credito" && creditAccountsBySale.TryGetValue(s.Id, out var credData))
+                {
+                    paidAmt = credData.PaidAmount;
+                    pendingBal = credData.Balance;
+                    decimal propCost = s.TotalAmount > 0m
+                        ? Math.Round(s.TotalCost * (paidAmt / s.TotalAmount), 2, MidpointRounding.AwayFromZero)
+                        : 0m;
+                    profit = s.IsActive ? (paidAmt - propCost) : 0m;
+                }
+
+                return new FinancialSaleItemDto
+                {
+                    SaleId = s.Id,
+                    Folio = s.Folio,
+                    CreatedAt = s.CreatedAt,
+                    CashierName = user.Name,
+                    CustomerName = s.CustomerName,
+                    PaymentMethod = s.PaymentMethod,
+                    PaymentReference = s.PaymentReference,
+                    ItemsCount = s.ItemsCount,
+                    GrossAmount = s.TotalAmount,
+                    RefundedAmount = refunded,
+                    NetAmount = s.IsActive ? netAmt : 0m,
+                    PaidAmount = s.IsActive ? paidAmt : 0m,
+                    PendingBalance = s.IsActive ? pendingBal : 0m,
+                    RealProfitAmount = profit,
+                    IsActive = s.IsActive
+                };
+            }).ToList();
+
+            // Totales
+            int ticketsCount = rawSales.Count;
+            decimal grossSales = rawSales.Sum(s => s.TotalAmount);
+            decimal totalRefunded = rawSales.Sum(s => refundsBySale.TryGetValue(s.Id, out var refAmt) ? refAmt : 0m);
+            decimal netSales = grossSales - totalRefunded;
+            decimal costOfGoods = productsReport.Sum(p => p.NetAmount - p.RealProfitAmount);
+            decimal realProfit = netSales - costOfGoods;
+            decimal margin = netSales > 0 ? Math.Round((realProfit / netSales) * 100m, 2) : 0m;
+
+            var paymentMethods = rawSales
+                .GroupBy(s => s.PaymentMethod)
+                .Select(pmg => new PaymentMethodSummaryDto
+                {
+                    Method = pmg.Key,
+                    Count = pmg.Count(),
+                    TotalAmount = pmg.Sum(s => s.TotalAmount)
+                })
+                .OrderByDescending(pm => pm.TotalAmount)
+                .ToList();
+
+            return new UserSalesDetailResponseDto
+            {
+                UserId = user.Id,
+                Username = user.Username,
+                FullName = user.Name,
+                RoleName = user.Rol?.Nombre ?? "Sin Rol",
+                PeriodType = periodType.ToString(),
+                StartDate = effectiveStart,
+                EndDate = effectiveEnd,
+                TicketsCount = ticketsCount,
+                GrossSalesAmount = grossSales,
+                TotalRefundedAmount = totalRefunded,
+                NetSalesAmount = netSales,
+                CostOfGoodsSold = costOfGoods,
+                RealProfitAmount = realProfit,
+                ProfitMarginPercent = margin,
+                TotalQuantitySold = productsReport.Sum(p => p.QuantitySold),
+                TotalQuantityReturned = productsReport.Sum(p => p.QuantityReturned),
+                NetQuantitySold = productsReport.Sum(p => p.NetQuantity),
+                PaymentMethodsSummary = paymentMethods,
+                Products = productsReport,
+                Sales = salesList
             };
         }
     }

@@ -234,13 +234,22 @@ namespace Api_Tlapaleria.Services
                 }
                 else if (venta.PaymentMethod == "Tarjeta" || venta.PaymentMethod == "Transferencia")
                 {
-                    if (string.IsNullOrWhiteSpace(venta.PaymentReference))
+                    if (venta.TotalAmount == 0 && string.IsNullOrWhiteSpace(venta.PaymentReference))
+                    {
+                        venta.PaymentReference = "DESCUENTO 100%";
+                    }
+                    else if (string.IsNullOrWhiteSpace(venta.PaymentReference))
                     {
                         throw new Exception($"Para pagos con {venta.PaymentMethod}, es obligatorio ingresar el número de autorización o referencia.");
                     }
                 }
                 else if (venta.PaymentMethod == "Efectivo")
                 {
+                    if (venta.TotalAmount == 0 && string.IsNullOrWhiteSpace(venta.PaymentReference))
+                    {
+                        venta.PaymentReference = "0";
+                    }
+
                     if (!string.IsNullOrWhiteSpace(venta.PaymentReference))
                     {
                         // Validamos que sea un número válido y que alcance para pagar la cuenta

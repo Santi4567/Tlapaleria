@@ -69,5 +69,31 @@ namespace Api_Tlapaleria.Controllers
             var detail = await _reportService.GetSupplierSalesDetailAsync(supplierId, startDate, endDate, periodType);
             return Ok(ApiResponse<SupplierSalesDetailResponseDto>.Exito(detail, "Desglose de ventas del proveedor generado exitosamente."));
         }
+
+        // -- Reporte de ventas por usuario (qué vendió cada usuario) --
+        [HttpGet("users-sales")]
+        [RequierePermiso("view.reports")]
+        public async Task<ActionResult<ApiResponse<UserSalesReportResponseDto>>> GetUsersSalesReport(
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null,
+            [FromQuery] UserSalesReportPeriod periodType = UserSalesReportPeriod.Day,
+            [FromQuery] int? userId = null)
+        {
+            var report = await _reportService.GetUsersSalesReportAsync(startDate, endDate, periodType, userId);
+            return Ok(ApiResponse<UserSalesReportResponseDto>.Exito(report, "Reporte de ventas por usuario generado exitosamente."));
+        }
+
+        // -- Desglose de lo que vendió un usuario específico --
+        [HttpGet("users-sales/{userId}")]
+        [RequierePermiso("view.reports")]
+        public async Task<ActionResult<ApiResponse<UserSalesDetailResponseDto>>> GetUserSalesDetail(
+            int userId,
+            [FromQuery] DateTime? startDate = null,
+            [FromQuery] DateTime? endDate = null,
+            [FromQuery] UserSalesReportPeriod periodType = UserSalesReportPeriod.Day)
+        {
+            var detail = await _reportService.GetUserSalesDetailAsync(userId, startDate, endDate, periodType);
+            return Ok(ApiResponse<UserSalesDetailResponseDto>.Exito(detail, "Detalle de ventas del usuario generado exitosamente."));
+        }
     }
 }
